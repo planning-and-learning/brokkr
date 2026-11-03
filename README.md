@@ -1,0 +1,39 @@
+# brokkr
+
+Build tooling for native C++ libraries shipped as Python wheels (the provider-wheel family: pyyggdrasil, pypddl,
+pytyr, pyrunir). A provider wheel bundles its native library, headers and exported CMake package under
+`<pkg>/native/`, and other wheels build and link against it through relative rpaths.
+
+- **CMake** (`find_package(brokkr)`): `brokkr_read_project_version` (usable before `project()`),
+  `brokkr_find_python_native_prefix`, `brokkr_register_*`, `brokkr_python_package_init`,
+  `brokkr_python_module_rpaths`, `brokkr_install_native_export`, `brokkr_install_runtime_path_fixup`,
+  `brokkr_install_provider_env`, `brokkr_install_python_stubs`, `brokkr_install_python_files`.
+- **PEP 517 backend** (`pybrokkr.build_backend.ProviderBackend`): scikit-build-core, with the providers' prefixes put
+  on `CMAKE_PREFIX_PATH` and the loader path, then the wheel's stubs published and its native libraries stripped.
+
+```toml
+[build-system]
+requires = ["scikit-build-core>=1.0.3,<2", "pybrokkr>=0.1,<0.2", "pyyggdrasil>=0.6,<0.7"]
+build-backend = "mypkg_build_backend"
+backend-path = ["python"]
+```
+
+```python
+# python/mypkg_build_backend.py
+from pybrokkr.build_backend import ProviderBackend
+
+ProviderBackend(
+    package="mypkg",
+    providers=("pyyggdrasil",),
+    prefix_defines={"pyyggdrasil": "YGGDRASIL_NATIVE_PREFIX"},
+).install_hooks(globals())
+```
+
+```cmake
+cmake_minimum_required(VERSION 3.21)
+find_package(brokkr REQUIRED)  # wheel builds: found through pybrokkr's cmake.prefix entry point
+brokkr_read_project_version(MYPKG_VERSION "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml")
+project(mypkg VERSION "${MYPKG_VERSION}" LANGUAGES CXX)
+```
+
+In a manual configure, pass `-Dbrokkr_DIR="$(python -m pybrokkr --cmake-dir)"`.

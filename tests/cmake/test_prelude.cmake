@@ -1,0 +1,7 @@
+if(NOT DEFINED BROKKR_CMAKE_DIR)
+    message(FATAL_ERROR "BROKKR_CMAKE_DIR is required.")
+endif()
+
+if(NOT DEFINED BROKKR_TEST_BINARY_DIR)
+    message(FATAL_ERROR "BROKKR_TEST_BINARY_DIR is required.")
+endif()

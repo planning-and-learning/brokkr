@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pybrokkr"
+version = "0.1.0"
+description = "Build tooling for native C++ libraries shipped as Python wheels: CMake helpers and a scikit-build-core backend"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.11"
+authors = [{ name = "Dominik Drexler", email = "dominik.drexler@liu.se" }]
+dependencies = ["scikit-build-core>=1.0.3,<2"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/verdog-ai/brokkr"
+
+# scikit-build-core puts this package's directory on CMAKE_PREFIX_PATH in wheel builds, so
+# find_package(brokkr) finds <prefix>/cmake/brokkrConfig.cmake.
+[project.entry-points."cmake.prefix"]
+brokkr = "pybrokkr"
+
+[tool.setuptools.package-data]
+pybrokkr = ["cmake/*.cmake"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
