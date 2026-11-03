@@ -1,0 +1,30 @@
+# The lint check: peachycheck's action checks the repository out, installs peachycheck and its linters and lints
+# with this repository's peachycheck.yml (the files changed since the base on a pull request, every file on main).
+# The organization's ruleset requires the job's name: `standards`.
+name: Standards
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  standards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        id: python
+        with:
+          python-version: "3.11"
+      - uses: drexlerd/peachycheck@v0.1.0
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        with:
+          # pyright needs the package and its test dependencies in .venv.
+          prepare: |
+            "$PYTHON" -m venv .venv
+            .venv/bin/python -m pip install --no-cache-dir -e ".[test]"

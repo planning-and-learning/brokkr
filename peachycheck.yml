@@ -1,0 +1,4 @@
+# peachycheck's configuration: https://github.com/drexlerd/peachycheck#configuration
+ENABLE_LINTERS: [PYTHON_RUFF, PYTHON_RUFF_FORMAT, PYTHON_PYRIGHT]
+# pyright resolves imports in the environment the workflow's prepare step creates.
+PYTHON_PYRIGHT_PYTHON: .venv/bin/python

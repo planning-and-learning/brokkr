@@ -1,7 +1,10 @@
 # Copyright (C) 2026 Dominik Drexler
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The CMake helpers' contract: find_package(brokkr) before project() (found as scikit-build-core finds it, the
-package dir on CMAKE_PREFIX_PATH), the rpath and prefix helpers, the version reader and the stub patching scripts."""
+"""The CMake helpers' contract.
+
+find_package(brokkr) before project() (found as scikit-build-core finds it, the package dir on CMAKE_PREFIX_PATH), the
+rpath and prefix helpers, the locator, the version reader and the stub patching scripts.
+"""
 
 import shutil
 import subprocess
@@ -14,23 +17,29 @@ import pytest
 import pybrokkr
 
 
-@pytest.mark.skipif(shutil.which("cmake") is None, reason="needs cmake")
 def test_find_package_before_project(tmp_path: Path) -> None:
+    cmake = _require_cmake()
     (tmp_path / "pyproject.toml").write_text('[tool.x]\nversion = "9.9"\n[project]\nname = "demo"\nversion = "1.2.3"\n')
     (tmp_path / "CMakeLists.txt").write_text(
-        "cmake_minimum_required(VERSION 3.21)\n"
-        "find_package(brokkr REQUIRED)\n"
-        'brokkr_read_project_version(DEMO_VERSION "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml")\n'
-        'project(demo VERSION "${DEMO_VERSION}" LANGUAGES NONE)\n'
-        "include(GNUInstallDirs)\n"
-        'brokkr_register_python_native_runtime_prefix("pyprovider")\n'
-        'brokkr_make_python_native_runtime_rpath_string(rpath "$ORIGIN" "../")\n'
-        'message(STATUS "version=${PROJECT_VERSION} rpath=${rpath}")\n'
+        textwrap.dedent(
+            """\
+            cmake_minimum_required(VERSION 3.21)
+            find_package(brokkr REQUIRED)
+            brokkr_read_project_version(DEMO_VERSION "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml")
+            project(demo VERSION "${DEMO_VERSION}" LANGUAGES NONE)
+            include(GNUInstallDirs)
+            brokkr_register_python_native_runtime_prefix("pyprovider")
+            brokkr_make_python_native_runtime_rpath_string(rpath "$ORIGIN" "../")
+            message(STATUS "version=${PROJECT_VERSION} rpath=${rpath}")
+            """
+        )
     )
     prefix = Path(pybrokkr.__file__).parent
     out = subprocess.run(
-        ["cmake", "-S", str(tmp_path), "-B", str(tmp_path / "build"), f"-DCMAKE_PREFIX_PATH={prefix}"],
-        check=True, capture_output=True, text=True,
+        [cmake, "-S", str(tmp_path), "-B", str(tmp_path / "build"), f"-DCMAKE_PREFIX_PATH={prefix}"],
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout
     assert "version=1.2.3 rpath=$ORIGIN:$ORIGIN/../pyprovider/lib" in out
 
@@ -104,13 +113,17 @@ def test_helper_functions_contract(tmp_path: Path) -> None:
     subprocess.run([cmake, "-P", str(script)], check=True)
 
 
-
 @pytest.mark.parametrize("script", ["read_project_version", "patch_python_stubs"])
 def test_cmake_script(tmp_path: Path, script: str) -> None:
     cmake = _require_cmake()
     subprocess.run(
-        [cmake, f"-DBROKKR_CMAKE_DIR={pybrokkr.cmake_dir()}", f"-DBROKKR_TEST_BINARY_DIR={tmp_path}",
-         "-P", str(Path(__file__).parent / "cmake" / f"{script}.cmake")],
+        [
+            cmake,
+            f"-DBROKKR_CMAKE_DIR={pybrokkr.cmake_dir()}",
+            f"-DBROKKR_TEST_BINARY_DIR={tmp_path}",
+            "-P",
+            str(Path(__file__).parent / "cmake" / f"{script}.cmake"),
+        ],
         check=True,
     )
 
@@ -120,17 +133,23 @@ def test_locate_finds_brokkr_through_python(tmp_path: Path) -> None:
     cmake = _require_cmake()
     locate = Path(pybrokkr.cmake_dir()) / "brokkrLocate.cmake"
     (tmp_path / "CMakeLists.txt").write_text(
-        "cmake_minimum_required(VERSION 3.21)\n"
-        "project(consumer LANGUAGES NONE)\n"
-        f'include("{locate.as_posix()}")\n'
-        "if(NOT COMMAND brokkr_find_python_native_prefix)\n"
-        '    message(FATAL_ERROR "brokkr helpers missing")\n'
-        "endif()\n"
-        'message(STATUS "located ${brokkr_DIR}")\n'
+        textwrap.dedent(
+            f"""\
+            cmake_minimum_required(VERSION 3.21)
+            project(consumer LANGUAGES NONE)
+            include("{locate.as_posix()}")
+            if(NOT COMMAND brokkr_find_python_native_prefix)
+                message(FATAL_ERROR "brokkr helpers missing")
+            endif()
+            message(STATUS "located ${{brokkr_DIR}}")
+            """
+        )
     )
     result = subprocess.run(
         [cmake, "-S", str(tmp_path), "-B", str(tmp_path / "build"), f"-DPython_EXECUTABLE={sys.executable}"],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"located {pybrokkr.cmake_dir()}" in result.stdout

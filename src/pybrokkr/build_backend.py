@@ -203,7 +203,7 @@ class ProviderBackend:
             _prepend_env_paths("LD_LIBRARY_PATH", native_library_dirs)
             _prepend_env_paths("DYLD_LIBRARY_PATH", native_library_dirs)
 
-        defines = []
+        defines: list[str] = []
         if native_prefixes:
             defines.append(f"-DCMAKE_PREFIX_PATH={';'.join(str(prefix) for prefix in native_prefixes)}")
         prefix_of = dict(zip(self.providers, native_prefixes, strict=True))

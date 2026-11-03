@@ -223,8 +223,14 @@ def test_processing_keeps_executable_modes(tmp_path: Path, monkeypatch: pytest.M
 
     backend = ProviderBackend("consumer", (), fix_stubs=False, should_strip=lambda path: path.name == "tool")
     monkeypatch.setenv("CONSUMER_STRIP_WHEEL", "ON")
+    monkeypatch.setattr(backend, "prepare_native_build", lambda: None)
+
+    def build(*_args: object) -> str:
+        return wheel_path.name
+
+    monkeypatch.setattr(scikit_build, "build_wheel", build)
     with patch.object(shutil, "which", return_value="/fake/strip"), patch.object(subprocess, "run") as strip:
-        backend._process_wheel(wheel_path)
+        assert backend.build_wheel(str(tmp_path)) == wheel_path.name
     strip.assert_called_once()
     with zipfile.ZipFile(wheel_path) as wheel:
         assert (wheel.getinfo(executable.filename).external_attr >> 16) & 0o777 == 0o755
