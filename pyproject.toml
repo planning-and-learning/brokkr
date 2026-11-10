@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pybrokkr"
-version = "0.1.0"
+version = "0.1.1"
 description = "Build tooling for native C++ libraries shipped as Python wheels: CMake helpers and a scikit-build-core backend"
 readme = "README.md"
 license = "GPL-3.0-or-later"
