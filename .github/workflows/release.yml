@@ -65,7 +65,7 @@ jobs:
       - build_wheel
     runs-on: ubuntu-latest
 
-    if: github.repository_owner == 'verdog-ai'
+    if: github.repository_owner == 'planning-and-learning'
 
     permissions:
       contents: write
@@ -112,7 +112,7 @@ jobs:
     needs: github_release
     runs-on: ubuntu-latest
 
-    if: github.repository_owner == 'verdog-ai'
+    if: github.repository_owner == 'planning-and-learning'
 
     permissions:
       id-token: write
