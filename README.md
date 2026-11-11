@@ -37,3 +37,8 @@ project(mypkg VERSION "${MYPKG_VERSION}" LANGUAGES CXX)
 ```
 
 In a manual configure, pass `-Dbrokkr_DIR="$(python -m pybrokkr --cmake-dir)"`.
+
+## Rules
+
+The rules the libraries share (the release cycle, the template and include rules and the coding rules) are
+maintained here, in `docs/`, and published at <https://planning-and-learning.github.io/brokkr/>.

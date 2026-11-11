@@ -38,5 +38,7 @@ combine-as-imports = true
 # document the behavior, pytest passes parametrized values by name, every assertion
 # counts as a branch, and the test folders are not packages.
 "tests/**" = ["S101", "PLR2004", "D1", "FBT001", "C901", "PLR0912", "PLR0915", "INP001"]
+# Sphinx's configuration is a script in a folder of pages, not a package.
+"docs/conf.py" = ["INP001"]
 # The command-line entry point prints its output.
 "src/pybrokkr/__main__.py" = ["T201"]

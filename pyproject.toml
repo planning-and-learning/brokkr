@@ -17,6 +17,7 @@ test = ["pytest"]
 
 [project.urls]
 Homepage = "https://github.com/planning-and-learning/brokkr"
+Documentation = "https://planning-and-learning.github.io/brokkr/"
 
 # scikit-build-core puts this package's directory on CMAKE_PREFIX_PATH in wheel builds, so
 # find_package(brokkr) finds <prefix>/cmake/brokkrConfig.cmake.
@@ -25,6 +26,10 @@ brokkr = "pybrokkr"
 
 [tool.setuptools.package-data]
 pybrokkr = ["cmake/*.cmake", "py.typed"]
+
+# The documentation (docs/*.rst) wraps at the same column as the code.
+[tool.doc8]
+max-line-length = 120
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
