@@ -50,6 +50,10 @@ C++ core
 
 The library, its tests and its benchmarks; the bindings add the rules under `nanobind`_.
 
+- **Data structures.** `urd <https://planning-and-learning.github.io/urd/>`__ provides the central data structures,
+  chosen by the properties a request states (what the data is and how it is used). Reuse the data structures from
+  there as much as possible.
+
 ``.clang-format`` formats all C++ code: Allman braces, an indent of 4 spaces, 160 columns, pointers and references
 aligned left (``T* p``), no bin-packing of arguments or parameters, includes sorted and regrouped.
 
@@ -120,9 +124,15 @@ The Python bindings (``python/src/``) are C++ and follow the core rules, with wh
 - **The module file.** ``python/src/module.cpp`` holds nothing but nanobind's module macro and is excluded from
   clang-tidy (``CPP_CLANG_TIDY_FILTER_REGEX_EXCLUDE`` in ``peachycheck.yml``): the macro's global and its C variadic
   call are nanobind's.
-- **Stubs.** Installing the package generates the ``.pyi`` stubs of the extension, and the package ships them with
-  ``py.typed``. pyright checks the Python code against them, so reinstall after a change to the C++ code or the
-  bindings; otherwise it reports the bindings as unresolved or untyped.
+- **Bindings only.** Binding code must not contain boilerplate: it contains class and function bindings and nothing
+  else.
+- **Handwritten files.** The package's root ``__init__.py`` and its stub, the root ``__init__.pyi``, are written by
+  hand and must follow the same structure in every repository: the imports of the provider packages, the re-exported
+  subpackages, ``__version__`` and the paths of the native build (``native_prefix()``, ``cmake_prefix()``,
+  ``cmake_dir()``, ...). No other ``.pyi`` file may be written by hand.
+- **Stubs.** Installing the package generates every other ``.pyi`` stub from the extension, and the package ships
+  them with ``py.typed``. pyright checks the Python code against them, so reinstall after a change to the C++ code or
+  the bindings; otherwise it reports the bindings as unresolved or untyped.
 - **Import order.** A package's ``__init__.py`` imports the packages that provide its native libraries (such as
   ``pyyggdrasil``) before its own extension, so the imports that follow are not at the top of the file (``E402``).
 
