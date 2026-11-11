@@ -43,13 +43,14 @@ Beyond the rule selection:
 ``pyrightconfig.json`` checks the sources and the tests in ``strict`` mode for Python 3.11, with the reports that
 strict mode leaves off or as warnings raised to errors (missing imports and stubs, unknown types, implicit overrides,
 unused imports and variables, unnecessary ``type: ignore`` comments, unreachable code, import cycles, deprecated
-names). pyright resolves imports in the repository's ``.venv``, so the package is installed there first; for a
-library with bindings that install also generates the stubs.
+names). pyright resolves imports in the repository's ``.venv``, so the package is installed there first.
 
-C++
----
+C++ core
+--------
 
-``.clang-format`` formats the code: Allman braces, an indent of 4 spaces, 160 columns, pointers and references
+The library, its tests and its benchmarks; the bindings add the rules under `nanobind`_.
+
+``.clang-format`` formats all C++ code: Allman braces, an indent of 4 spaces, 160 columns, pointers and references
 aligned left (``T* p``), no bin-packing of arguments or parameters, includes sorted and regrouped.
 
 ``.clang-tidy`` turns on every ``bugprone``, ``cppcoreguidelines`` and ``performance`` check, the static analyzer
@@ -106,10 +107,24 @@ Folders with their own ``.clang-tidy`` inherit the repository's and turn off mor
   safety. Tests read optionals with ``value()``, whose ``bad_optional_access`` fails the test.
 - **Benchmarks**: literal values are the benchmark sizes and data, and benchmarks register themselves during static
   initialization, which may throw.
-- **Bindings**: nanobind takes ownership of objects returned as ``new T`` with ``rv_policy::take_ownership``; types
-  that cannot move are created that way.
 
 Headers and templates also follow the :doc:`template_rules`.
+
+nanobind
+--------
+
+The Python bindings (``python/src/``) are C++ and follow the core rules, with what nanobind requires:
+
+- **Ownership.** ``python/src/.clang-tidy`` turns off ``cppcoreguidelines-owning-memory``: nanobind takes ownership
+  of objects returned as ``new T`` with ``rv_policy::take_ownership``; types that cannot move are created that way.
+- **The module file.** ``python/src/module.cpp`` holds nothing but nanobind's module macro and is excluded from
+  clang-tidy (``CPP_CLANG_TIDY_FILTER_REGEX_EXCLUDE`` in ``peachycheck.yml``): the macro's global and its C variadic
+  call are nanobind's.
+- **Stubs.** Installing the package generates the ``.pyi`` stubs of the extension, and the package ships them with
+  ``py.typed``. pyright checks the Python code against them, so reinstall after a change to the C++ code or the
+  bindings; otherwise it reports the bindings as unresolved or untyped.
+- **Import order.** A package's ``__init__.py`` imports the packages that provide its native libraries (such as
+  ``pyyggdrasil``) before its own extension, so the imports that follow are not at the top of the file (``E402``).
 
 Documentation
 -------------
