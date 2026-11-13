@@ -53,6 +53,39 @@ The library, its tests and its benchmarks; the bindings add the rules under `nan
 - **Data structures.** `urd <https://planning-and-learning.github.io/urd/>`__ provides the central data structures,
   chosen by the properties a request states (what the data is and how it is used). Reuse the data structures from
   there as much as possible.
+- **Derived operations.** A generic interface has a small set of primitives, which every implementation provides, and
+  derived operations with a default written from the primitives. An implementation overrides a derived operation only
+  where it is faster by a complexity class or by word-parallelism, and the default is the reference its tests compare
+  against. A derived operation is added only when an algorithm needs it and some implementation overrides it that
+  way. Code that depends on the fast version states the cost it requires, so that it does not compile against the
+  default.
+- **No silent fallbacks.** A fallback is code that detects that something it needs does not hold (a capability, a
+  successful result, a value) and proceeds without reporting it: it discards what failed or manufactures a value in its
+  place. What fails, fails loudly: a compile error where a type lacks what it needs, an exception where an operation
+  fails, a signal in the result type (``std::optional``, a ``bool``, an iterator to the end) where absence is part of
+  the contract. Three shapes are always fallbacks, since their failure path has no code of its own, and
+  ``python -m pybrokkr.fallbacks --compile-commands build/compile_commands.json`` reports them:
+
+  - ``if constexpr (requires ...) S`` without ``else``, the ``requires`` not negated and ``S`` not leaving: where the
+    type lacks it, nothing happens;
+  - a ``catch`` with an empty handler: where the operation fails, execution goes on;
+  - ``value_or(v)``: where the value is missing, ``v`` takes its place.
+
+  An *alternative* is no fallback: it meets the same contract another way (a derived operation's default, a dispatch
+  on the representation). Write it as an overload constrained by a named concept, or with an ``else`` of its own,
+  never as a bare skip. Dispatch on what a type offers only through named concepts (``urd::bidirectional_graph``), not
+  inline ``requires`` expressions, and assert the concept on every type meant to model it, so that a renamed member is
+  a compile error rather than a missing feature. Say *empty*, not *absent*: where there is nothing (a graph without
+  data, a storage without a parameter), use a type with one value (``std::monostate``; regular void, P0146) rather
+  than ``void``, so that generic code never asks whether there is something. A value of such a type may be left out,
+  since nothing is lost.
+
+  The terms come from the literature on error hiding: J. Shore, `Fail Fast
+  <https://martinfowler.com/ieeeSoftware/failFast.pdf>`__ (IEEE Software, 2004); M. Rinard et al., `Failure-Oblivious
+  Computing <https://www.usenix.org/legacy/events/osdi04/tech/full_papers/rinard/rinard_html/paper.html>`__ (OSDI
+  2004), which discards and manufactures on purpose; D. Yuan et al., `Simple Testing Can Prevent Most Critical
+  Failures <https://www.usenix.org/conference/osdi14/technical-sessions/presentation/yuan>`__ (OSDI 2014), on empty
+  and log-only handlers.
 
 ``.clang-format`` formats all C++ code: Allman braces, an indent of 4 spaces, 160 columns, pointers and references
 aligned left (``T* p``), no bin-packing of arguments or parameters, includes sorted and regrouped.

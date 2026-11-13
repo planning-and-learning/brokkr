@@ -14,6 +14,8 @@ dependencies = ["scikit-build-core>=1.0.3,<2"]
 
 [project.optional-dependencies]
 test = ["pytest"]
+# python -m pybrokkr.fallbacks: clang's own parser.
+fallbacks = ["libclang>=18"]
 
 [project.urls]
 Homepage = "https://github.com/planning-and-learning/brokkr"

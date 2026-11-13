@@ -8,6 +8,8 @@ pytyr, pyrunir). A provider wheel bundles its native library, headers and export
   `brokkr_find_python_native_prefix`, `brokkr_register_*`, `brokkr_python_package_init`,
   `brokkr_python_module_rpaths`, `brokkr_install_native_export`, `brokkr_install_runtime_path_fixup`,
   `brokkr_install_provider_env`, `brokkr_install_python_stubs`, `brokkr_install_python_files`.
+- **Fallback check** (`python -m pybrokkr.fallbacks --compile-commands build/compile_commands.json`, with
+  `pybrokkr[fallbacks]`): reports the silent fallbacks of a C++ project, as the coding rules define them.
 - **PEP 517 backend** (`pybrokkr.build_backend.ProviderBackend`): scikit-build-core, with the providers' prefixes put
   on `CMAKE_PREFIX_PATH` and the loader path, then the wheel's stubs published and its native libraries stripped.
 
