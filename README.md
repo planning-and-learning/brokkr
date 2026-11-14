@@ -15,6 +15,9 @@ pytyr, pyrunir). A provider wheel bundles its native library, headers and export
 - **Compile cost** (`python -m pybrokkr.compile_cost`): records every compile's time and peak memory through CMake's
   compiler launcher, compares two builds by object, and finds what a build compiles in more than one translation unit,
   as the template rules measure it.
+- **Layout check** (`python -m pybrokkr.layout <repository>...`): every tracked file of a library against the
+  directory layout the docs state (an allowlist of patterns, the mirroring of `include/`, stub packages), each finding
+  reported.
 - **Unity check** (`python -m pybrokkr.unity_check --compile-commands build/compile_commands.json <directory>...`,
   with `pybrokkr[fallbacks]`): the file-local functions that a unity batch of each directory would make overloads of
   each other.

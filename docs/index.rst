@@ -12,5 +12,6 @@ brokkr is what the planning-and-learning libraries (urd, yggdrasil, loki, tyr, r
    :caption: Rules
 
    release_cycle
+   directory_layout
    template_rules
    coding_rules
