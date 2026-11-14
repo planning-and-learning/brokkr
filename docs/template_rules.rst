@@ -45,8 +45,9 @@ Headers
    keeps its stores behind a pointer to its implementation, which one source per library instantiates
    (``yggdrasil/formalism/repository_instantiations.hpp``): a file that reads records through it completes none of its
    stores. Each read becomes a call; in tyr that costs 1-3% of search time, with the same results, and saves 16% of the
-   summed peak memory and 23% of the CPU time of a full build (runir, which reads tyr's repositories: 11% and 11%). Its interface forwards what its users ask (a count, a
-   membership, a row) and never hands out a store: a user that reaches into one completes it. Never in views,
+   summed peak memory and 23% of the CPU time of a full build (runir, which reads tyr's repositories: 11% and 11%).
+   Its interface forwards what its users ask (a count, a membership, a row) and never hands out a store: a user that
+   reaches into one completes it. Never in views,
    interning or evaluation, whose code is the hot loop itself.
 
 Instantiation
