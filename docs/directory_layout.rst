@@ -160,6 +160,14 @@ Repository root
    * - ``cmake/``, ``typings/``
      - CMake modules of the library's own; type stubs for packages that ship none (below).
 
+Every repository has ``pyproject.toml``, ``README.md``, ``AGENTS.md``, ``LICENSE``, ``peachycheck.yml``, ``.gitignore``,
+``ruff.toml``, ``pyrightconfig.json`` and the lint workflow ``.github/workflows/peachycheck.yml``; a library has
+``CMakeLists.txt``, ``Config.cmake.in``, ``.clang-format`` and ``.clang-tidy`` besides. The other files are optional.
+
+A repository is a library where ``include/`` holds one directory, the library's. Without ``include/`` it is a Python
+package under ``src/py<name>/`` (brokkr): it has the files of every repository, its modules and the CMake modules it
+installs under ``src/py<name>/``, and ``tests/``, ``docs/`` and ``typings/`` as a library has them.
+
 Results of experiments and evaluations (report directories, plan files, logs) are never tracked: they go to a
 directory outside the repository. The only results a repository holds are a benchmark's under
 ``benchmarks/results/``, which a test or the code reads.
@@ -381,15 +389,40 @@ The patterns use two abbreviations: ``NAME`` is ``[a-z0-9_]+``, a lowercase snak
    * - typings
      - ``typings/NAME/DIRS (?:__init__|NAME)\.pyi``
      - type stubs, by import path
+   * - python-only package
+     - ``src/pyNAME/DIRS NAME\.py``, ``src/pyNAME/py\.typed``, ``src/pyNAME/cmake/[A-Za-z0-9_]+\.cmake``
+     - a repository without ``include/``: its modules, and the CMake modules it installs
 
-(``DIRS NAME`` is written with a space for reading; the pattern has none.)
+(``DIRS NAME`` is written with a space for reading; the pattern has none.) The kinds *include*, *src*, *python*,
+*python package*, *python tests*, *native dependencies*, *share* and *cmake* are a library's; a repository without
+``include/`` has *python-only package* in their place.
 
-Two rules are about structure, which a pattern cannot state, and are checked beside the patterns:
+These rules are about structure, which a pattern cannot state, and are checked beside the patterns:
 
+- **Required files**: the files every repository has, and those a library has besides (*Repository root*), are
+  tracked.
 - **Mirroring**: a directory under ``tests/unit/`` or ``benchmarks/`` (other than ``support/``, ``suites/``,
   ``results/`` and ``tools/``), and a directory of ``python/src/py<lib>/`` that holds binding sources (``.cpp``,
   ``.hpp``) or is a parent of one that does, names a component that exists under ``include/<lib>/`` or ``src/``.
 - **Stub packages**: every directory under ``typings/`` has an ``__init__.pyi``.
+- **A unit test refers to its component**: a C++ test under ``tests/unit/<component>/`` includes a header of that
+  component (``<lib>/<component>/...``, ``<lib>/<component>.hpp``, or one the sources keep under
+  ``src/<component>/``). A Python test (``test_*.py``) under ``tests/unit/<component>/`` or
+  ``python/tests/<component>/`` imports the component's module or a package that holds it, as Python reaches a
+  submodule through its package; ``python/tests/downstream/`` is of no component. A test that includes nothing of the
+  directory it is in is in the wrong directory, or is no unit test (a ``main.cpp``, shared fixtures:
+  ``tests/support/``).
+- **A header is included**: a header under ``include/<lib>/<component>/`` is included by another tracked file. A
+  header at the top of ``include/<lib>/`` is an entry a user includes.
+
+One rule needs the configured build, as only CMake knows what a target builds:
+
+- **Every source is built, every test script is run**: a tracked ``.cpp`` under ``src/``, ``tests/``,
+  ``benchmarks/``, ``exe/``, ``examples/`` or ``python/`` is a source of a target, is included by a source or a
+  tracked file, or is named in a ``CMakeLists.txt`` of its directory or of one above it. A tracked Python script
+  under ``tests/`` (other than ``tests/support/``) is a test pytest finds by its name (``test_*.py``), is named in
+  such a ``CMakeLists.txt``, or is imported by a tracked Python file. A test in the right directory that nothing
+  registers is never compiled, and its absence fails nothing.
 
 Not allowed, among others: a source file under ``include/``; a ``profiling/`` directory (it is ``benchmarks/``);
 results of a run that nothing reads; a third party's paper (link to it from the docs);
@@ -402,5 +435,11 @@ Status
 
 Checked against each library's tracked files (November 2026), every library follows the rules.
 
-``python -m pybrokkr.layout <repository>...`` checks a library against this page: the patterns and the two rules
-about structure. It reports each finding and exits 1 where any is found.
+``python -m pybrokkr.layout <repository>...`` checks a repository against this page: the patterns and the rules
+about structure. ``python -m pybrokkr.registered --sources <build>/brokkr/sources.txt <repository>`` checks the rule
+that needs the build. Each reports its findings and exits 1 where any is found.
+
+A library runs both as tests: ``brokkr_add_rule_tests()`` in its ``tests/CMakeLists.txt`` registers ``layout`` and
+``registered`` (``ctest -L rules``) and writes the sources of every target to ``<build>/brokkr/sources.txt`` when the
+build is configured. A rule added to brokkr is added to that function, so a library gets it with the brokkr it builds
+with. brokkr, which has no build, checks its own tree in ``tests/unit/pybrokkr/test_layout.py``.

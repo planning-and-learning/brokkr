@@ -9,15 +9,18 @@ pytyr, pyrunir). A provider wheel bundles its native library, headers and export
   `brokkr_python_module_rpaths`, `brokkr_install_native_export`, `brokkr_install_runtime_path_fixup`,
   `brokkr_install_provider_env`, `brokkr_install_python_stubs`, `brokkr_install_python_files`,
   `brokkr_unity_directories` (unity batches by directory), `brokkr_limit_compile_jobs` (a target's TUs compiled at most
-  so many at once; no limit when the count is empty).
+  so many at once; no limit when the count is empty), `brokkr_add_rule_tests` (the layout checks as tests, `ctest -L
+  rules`).
 - **Fallback check** (`python -m pybrokkr.fallbacks --compile-commands build/compile_commands.json`, with
   `pybrokkr[fallbacks]`): reports the silent fallbacks of a C++ project, as the coding rules define them.
 - **Compile cost** (`python -m pybrokkr.compile_cost`): records every compile's time and peak memory through CMake's
   compiler launcher, compares two builds by object, and finds what a build compiles in more than one translation unit,
   as the template rules measure it.
-- **Layout check** (`python -m pybrokkr.layout <repository>...`): every tracked file of a library against the
-  directory layout the docs state (an allowlist of patterns, the mirroring of `include/`, stub packages), each finding
-  reported.
+- **Layout check** (`python -m pybrokkr.layout <repository>...`): every tracked file of a repository against the
+  directory layout the docs state (an allowlist of patterns, the required files, the mirroring of `include/`, stub
+  packages, unit tests that include their component, headers that are included), each finding reported.
+  `python -m pybrokkr.registered --sources <build>/brokkr/sources.txt <repository>` adds what needs the build: every
+  source built by a target, every test script run.
 - **Unity check** (`python -m pybrokkr.unity_check --compile-commands build/compile_commands.json <directory>...`,
   with `pybrokkr[fallbacks]`): the file-local functions that a unity batch of each directory would make overloads of
   each other.

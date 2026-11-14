@@ -40,8 +40,14 @@ Headers
    type that is formatted (``tyr/planning/formatter.hpp``, ``yggdrasil/formatting/cista_formatters.hpp``). Measure
    third-party headers on their own before including them from a widely used header; a small utility can carry a large
    include tree.
-6. **Pimpl only at high-level entities** (heuristics, state repositories, executors), never in views, repositories,
-   interning or evaluation.
+6. **Pimpl at high-level entities** (heuristics, state repositories, executors) **and at a repository whose stores its
+   includers do not need.** A formalism repository (yggdrasil's ``Repository``) declares its members in its header and
+   keeps its stores behind a pointer to its implementation, which one source per library instantiates
+   (``yggdrasil/formalism/repository_instantiations.hpp``): a file that reads records through it completes none of its
+   stores. Each read becomes a call; in tyr that costs 1-3% of search time, with the same results, and saves 16% of the
+   summed peak memory and 23% of the CPU time of a full build (runir, which reads tyr's repositories: 11% and 11%). Its interface forwards what its users ask (a count, a
+   membership, a row) and never hands out a store: a user that reaches into one completes it. Never in views,
+   interning or evaluation, whose code is the hot loop itself.
 
 Instantiation
 -------------
@@ -199,6 +205,16 @@ Instantiation
     non-template members that call the recursion out of the class too: their bodies instantiate it where the class
     ends, before the specializations are declared (ill-formed; clang rejects it, GCC does not). An inline non-template
     function in a header costs the same: every includer instantiates what it calls, whether or not it calls it.
+
+25. **Name a class whose definition is hidden by what it holds, not by its implementation.** Argument-dependent lookup
+    of an unqualified call completes the class templates among the template arguments of its arguments' types, to find
+    their friends. A pimpl class ``Repository<ConcurrentSymbolRepository<Ts...>, ...>`` therefore completes its stores
+    in every file that passes one to an unqualified call: in tyr, one such call instantiated the 55 stores of a symbol
+    repository. Named by empty descriptors of what it holds (``Repository<ConcurrentSymbols<Ts...>,
+    ConcurrentRelations<Tag, Ts...>>``, ``yggdrasil/formalism/declarations.hpp``), only those and the record tags
+    complete, and the implementation maps them to its stores; in tyr this took a further 12 GiB (10%) off the summed
+    peak memory of a full build. The same holds for any template argument that is costly to complete: a qualified call
+    (``detail::played_roles(...)``) avoids the lookup where the type cannot change.
 
 Process
 -------

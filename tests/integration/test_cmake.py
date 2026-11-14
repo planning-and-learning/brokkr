@@ -122,7 +122,7 @@ def test_cmake_script(tmp_path: Path, script: str) -> None:
             f"-DBROKKR_CMAKE_DIR={pybrokkr.cmake_dir()}",
             f"-DBROKKR_TEST_BINARY_DIR={tmp_path}",
             "-P",
-            str(Path(__file__).parent / "cmake" / f"{script}.cmake"),
+            str(Path(__file__).parents[1] / "support" / "data" / "cmake" / f"{script}.cmake"),
         ],
         check=True,
     )
