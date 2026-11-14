@@ -35,9 +35,13 @@ The libraries are released to PyPI as one chain, upstream first:
      - ``pytyr``
      - ``pyurd``, ``pyyggdrasil``, ``pypddl``
    * - 7
+     - vefr
+     - ``pyvefr``
+     - ``pyurd``
+   * - 8
      - runir
      - ``pyrunir``
-     - ``pyurd``, ``pyyggdrasil``, ``pypddl``, ``pytyr``
+     - ``pyurd``, ``pyyggdrasil``, ``pypddl``, ``pytyr``, ``pyvefr``
 
 ``pybrokkr`` is the build tooling the others share, pure Python. urd releases two packages from one repository:
 ``pyurd-native``, the native dependencies of all the libraries as platform wheels (tag ``native-v<version>``, workflow
