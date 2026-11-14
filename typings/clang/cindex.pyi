@@ -1,6 +1,7 @@
 # Copyright (C) 2026 Dominik Drexler
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Types for the part of libclang's Python bindings pybrokkr.fallbacks reads; the bindings declare none.
+# Types for the part of libclang's Python bindings pybrokkr.fallbacks and pybrokkr.unity_check read; the bindings
+# declare none.
 
 from collections.abc import Iterator
 
@@ -22,6 +23,10 @@ class CursorKind:
     MEMBER_REF_EXPR: CursorKind
     RETURN_STMT: CursorKind
     STRUCT_DECL: CursorKind
+    TRANSLATION_UNIT: CursorKind
+
+class LinkageKind:
+    INTERNAL: LinkageKind
 
 class File:
     @property
@@ -58,7 +63,10 @@ class Cursor:
     def location(self) -> SourceLocation: ...
     @property
     def extent(self) -> SourceRange: ...
+    @property
+    def linkage(self) -> LinkageKind: ...
     def get_children(self) -> Iterator[Cursor]: ...
+    def walk_preorder(self) -> Iterator[Cursor]: ...
     def get_tokens(self) -> Iterator[Token]: ...
     def is_definition(self) -> bool: ...
 
@@ -68,6 +76,7 @@ class Diagnostic:
     def severity(self) -> int: ...
 
 class TranslationUnit:
+    PARSE_SKIP_FUNCTION_BODIES: int
     @property
     def cursor(self) -> Cursor: ...
     @property
@@ -78,4 +87,4 @@ class TranslationUnitLoadError(Exception): ...
 class Index:
     @staticmethod
     def create() -> Index: ...
-    def parse(self, path: str, args: list[str] | None = None) -> TranslationUnit: ...
+    def parse(self, path: str, args: list[str] | None = None, options: int = 0) -> TranslationUnit: ...

@@ -91,6 +91,19 @@ Instantiation
     parts stay in one test executable. A split lowers the heaviest TU, but the peak build memory only if the heavy TUs
     no longer overlap: the parts fill the parallel slots. Keep a split only if the peak drops (identical builds vary by
     about 1 GB at -j12, so compare two runs each).
+    Merge with ``brokkr_unity_directories(<target> ENABLED ${<PROJECT>_UNITY_BUILD} DIRECTORIES ...)``: the sources of
+    each directory listed compile as one TU, and ``<PROJECT>_UNITY_BUILD=OFF`` compiles them apart again (for
+    clang-tidy, and for rebuilds after editing one source). Light sources that include the same headers merge to about
+    their largest part (type tests, bindings of one family). Merged heavy sources keep the summed memory down but can
+    raise the peak at high parallelism, as more slots hold heavy TUs at once (the heaviest TU, and so the peak at low
+    parallelism, stays): keep such a merge only where it buys wall time, and say so. A batch puts the file-local names
+    of its sources into one TU: a name declared twice fails to compile (give each file a namespace of its own), but
+    internal functions of one name and different parameters become overloads, and a call may resolve to another file's;
+    look for them before listing a directory (``python -m pybrokkr.unity_check --compile-commands <db> <directory>...``,
+    with the batches off), and rename them or give them their own namespace. Where a target's heavy TUs still overlap,
+    cap how many of them compile at once (``brokkr_limit_compile_jobs(<target> JOBS <n>)``, a Ninja job pool): the
+    other targets fill the free slots, so the peak drops at about the same wall time. The cap depends on the machine,
+    so ``<n>`` is a cache variable set at configuration time, empty (no cap) by default.
 
 12. **One container for many record types.** Memo tables, visited sets and caches keyed by records of every type in a
     type list use one container keyed by (type position, index) instead of a tuple with one container per type: each
@@ -157,6 +170,36 @@ Instantiation
     and ``std::apply``. A ``cista_members()`` that returns ``std::tie`` in a non-template record compiles in every
     includer. Find such costs with clang's ``-ftime-trace`` over the heaviest TUs, summed by template name.
 
+21. **Compute once per value what depends on a value only.** A constant computed per template (a variable template, a
+    static data member) is computed again for every template argument list, even where it depends on part of it only.
+    Key it by that part, passed as a value: urd's choice of a container depends on the request's shape (what it
+    requires, what its data is, what it holds), not on its element types, so ``serving_for<Kind, Shape>`` scans the
+    kind's table once per shape, and every Store of that shape reuses the scan (74 shapes among 832 Stores in two
+    pyrunir TUs). The value must be structural, as urd's ``property_set`` is.
+
+22. **Expand a pack instead of recursing over it.** A recursion over a list is one class instantiation per step, each
+    carrying every argument of the recursion; where one is a large value (a ``property_set`` of 64 tags), naming and
+    comparing it costs more than the step's work. urd's spec of a request takes the answer of each category of its
+    kind's format in one expansion (``answers_of<Meant>(format)``: an ``mp_append`` of each category's answer, or of
+    nothing), not in a recursion of one step per category for every Store.
+
+23. **Build a** ``std::variant`` **by its index.** Its converting constructor resolves an overload set over all
+    alternatives (``_Build_FUNs``) for every type it is called with, so building each alternative of an N-way variant
+    from a value resolves N sets of N. ``std::in_place_index<I>`` names the alternative instead. libstdc++ still builds
+    alternative I through I nested unions (``_Variadic_union``), about N²/2 instantiations for a variant whose every
+    alternative is built; a variant of many alternatives that is built often (a record's variant of child views) is a
+    cost of its own, which only a type of fewer alternatives, or none, removes.
+
+24. **Define a recursion over every record kind once, at the records of any kind.** A visitor that recurses through a
+    record's children (an optimizer, a measure, a statistics collector) instantiates, from any one record, the closure
+    of every kind below it; defined in a header, it makes every includer that calls it on one record compile all of
+    them. Declare it in the header for the records of any kind, the variants that children are held as (a constructor
+    of each category, a query of any kind): plain overloads, or explicit specializations of a member template, defined
+    in the library. An includer then compiles the record it calls the visitor on and stops at its children. Move the
+    non-template members that call the recursion out of the class too: their bodies instantiate it where the class
+    ends, before the specializations are declared (ill-formed; clang rejects it, GCC does not). An inline non-template
+    function in a header costs the same: every includer instantiates what it calls, whether or not it calls it.
+
 Process
 -------
 
@@ -168,6 +211,13 @@ Process
     prefix that holds only the third-party dependencies and the freshly installed upstream repositories: the yggdrasil
     install bundles the prefix into ``pyyggdrasil/``, whose include directory comes first, so a stale loki or tyr
     install there silently replaces the headers being measured.
+    ``python -m pybrokkr.compile_cost`` records a build through CMake's compiler launcher
+    (``-DCMAKE_CXX_COMPILER_LAUNCHER="python;-m;pybrokkr.compile_cost;record;<log>"``: every object's time and the
+    compiler's max RSS), summarizes a log and compares two by object. Sample the memory in use on the machine
+    (``MemAvailable`` in ``/proc/meminfo``) during the build for its peak. ``compile_cost weak <build dir>`` sums the
+    weak definitions of all objects by template: what the build compiles in more than one TU. A template that a
+    library instantiates explicitly, found weak in another object, marks a TU that does that work without the opt-in
+    list that declares it (rule 9); an extern list declared before its use keeps it out (an undefined symbol instead).
 14. **Keep only what wins in the full build.** A smaller standalone header often does not shrink its includers, which
     may instantiate the same code anyway. Revert changes that do not lower the max or summed memory of the affected TUs.
 
@@ -516,3 +566,165 @@ Examples
        GB (median 426 MB to 403 MB), loki 60.5 GB to 60.0 GB; largest drops 0.07 GB (tyr) and 0.10 GB (runir); tyr A\*
        blind and FF on 27 HTG tasks, lifted and ground: identical expansions and costs, stable cases within 5%, peak RSS
        geomean 0.98 to 1.005
+   * - 13
+     - the runir build with its tests and pyrunir (255 TUs; GCC 13, Release, -j12) measured again after urd took over
+       the containers, records and graphs, against the rows above
+     - summed memory 381.4 GB, median 1236 MB, max 4.08 GB, CPU 79.5 min, wall 427 s, peak 38.4 GB; clang traces of the
+       heaviest TUs put urd's own templates at 26% of their instantiation time and constant evaluation at 6%, most of it
+       choosing containers (the rows below)
+   * - 21, 22
+     - urd ``spec``'s answers in one expansion instead of a recursion of about 20 steps per Store, each carrying the
+       request's ``property_set``; the container scan (``serving_v``) keyed by the request's shape
+       (``serving_for<Kind, Shape>``), so Stores over different element types share it
+     - front end (-fsyntax-only, frequent collections): DL repository 9.6 s to 8.4 s and 1.86 GB to 1.62 GB, DL
+       evaluation 25.2 s to 20.9 s, successor expander test 29.9 s to 25.9 s; with the next row, the runir build
+       CPU 79.5 min to 70.8 min, summed memory 381.4 GB to 358.4 GB, max 4.08 GB to 3.92 GB, wall 427 s to 380 s
+   * - 23
+     - urd's ``resolution`` of a variant member builds each alternative of the ``std::variant`` of views by
+       ``std::in_place_index`` instead of the converting constructor
+     - 20 to 30 MB per TU; the variants' ``_Variadic_union`` constructors remain the largest standard library cost
+       under urd (about 0.5 s of clang front end per heavy TU)
+   * - 18, 20
+     - urd ``Hash``, ``EqualTo`` and ``Less`` of a record fold over its identifying members (``members_hashable``,
+       ``hash_members``, ``equal_members``, ``less_members``) instead of building the tuple ``identity()`` gives;
+       ``identity_t`` names that tuple from the members' types, so naming it instantiates no function; same hashes and
+       orders (urd's tests); the transparent overloads keep the tuple
+     - front end -66 to -177 MB and -0.4 to -1.6 s per TU (DL repository 1.62 GB to 1.56 GB, successor expander test
+       3.13 GB to 2.95 GB)
+   * - 4, 8
+     - runir ``is_complement_leaf`` (an inline non-template function visiting every query tag and constructor) and its
+       visitor moved from ``translations/ygg_query.hpp`` into its only user, ``ygg_query.cpp``; the text of a DL
+       constructor or query (``semantics::text``) compiled once in ``src/kr/dl/semantics/formatter.cpp``: formatting
+       one formats its operands of every kind, which every TU that formatted a feature compiled
+     - with the previous row, runir CPU 70.8 min to 65.6 min, summed memory 358.4 GB to 329.8 GB, max 3.92 GB to
+       3.65 GB, median 1120 MB to 1020 MB, slowest TU 95 s to 63 s, wall 380 s to 356 s, peak 37.8 GB to 36.9 GB; tyr
+       (only the urd rows) CPU 36.8 min to 32.2 min, summed 222.7 GB to 200.3 GB, median 874 MB to 780 MB, above
+       1 GiB 97 to 66, wall 205 s to 181 s, peak 26.1 GB to 25.4 GB
+   * - 9, 13
+     - TUs that intern without the opt-in list of what they intern, found as weak ``intern`` definitions
+       (``compile_cost weak``): runir CNF generation, query evaluation and successor expander tests, must-pass
+       profile and the ps rule binding include their lists; tyr's RPG, static rule filter, literal decomposition, rule
+       splitting and program sources and five tests include ``tyr/formalism/detail/repository_instantiations.hpp``
+     - at -O3: CNF generation 61.8 s to 44.6 s and 3.06 GB to 2.57 GB, query evaluation test 64.4 s to 55.2 s, tyr
+       static rule filter 21.2 s to 15.0 s and 1.22 GB to 0.97 GB, rule splitting 23.3 s to 16.6 s; the ps Ext program
+       executor binding was unchanged and keeps no list
+   * - 11
+     - pyrunir's sources of one directory compiled as one TU (``brokkr_unity_directories``, ``RUNIR_UNITY_BUILD``) for
+       the twelve directories whose merged source stays below the heaviest TU (merged probes: ``kr/ps/base/dl`` nine
+       sources 15.5 GB summed, 3.62 GB merged; ``datasets`` 4.55 GB, 1.97 GB); runir's and tyr's type tests the same,
+       each test file in a namespace of its own (``runir::tests::<path>``, ``tyr::tests::<path>``)
+     - runir 256 TUs to 190, CPU 64.8 min to 56.1 min, summed memory 328.7 GB to 271.6 GB, wall 350 s to 305 s, max
+       3.58 GB to 3.62 GB, peak 36.5/36.6 GB to 37.7/38.0 GB (two runs each); tyr 262 TUs to 224, CPU 31.4 min to
+       28.2 min, summed 197.7 GB to 174.3 GB, wall 176 s to 161 s, peak 25.8 GB to 23.6 GB
+   * - 11
+     - tyr's library (``core``) batched in the 22 directories whose merged source stays below its heaviest TU
+       (``planning/heuristics``: five sources 8.17 GB summed, 1.90 GB merged), none of them declaring a file-local
+       function twice; ``formalism/planning`` and ``planning/lifted`` exceed the heaviest TU merged, ``analysis`` and
+       ``planning/lifted/programs`` repeat file-local names
+     - tyr 224 TUs to 160, CPU 28.2 min to 21.8 min, summed memory 174.3 GB to 128.0 GB, wall 161 s to 130 s, max
+       2.12 GB, peak 23.6 GB to 23.9 GB; with the rows above, tyr CPU 36.8 min to 21.8 min, summed 222.7 GB to
+       128.0 GB, wall 205 s to 130 s, peak 26.1 GB to 23.9 GB
+   * - 11
+     - pytyr batched: ``database/query`` and ``formalism/datalog`` whole, ``formalism`` and ``formalism/planning`` by at
+       most 11 sources (``BATCH_SIZE``: 18 and 21 sources merge to 3.13 GB and 3.74 GB whole, above the 2.99 GB of the
+       serialization binding); with the library batches above
+     - tyr with pytyr: library 121 TUs to 57 (106.5 GB to 60.1 GB summed), pytyr 86 TUs to 29 (73.6 GB to 42.0 GB),
+       CPU 27.8 min to 17.4 min, wall 158 s to 104 s, max 2.99 GB, but peak at -j12 25.3/25.5 GB to 27.6/27.6 GB;
+       the job pool below brings the peak back down
+   * - 11
+     - tyr's ``analysis`` and ``planning/lifted/programs`` freed of repeated file-local names, then batched: the domain
+       helpers both analyses copied moved to ``analysis/domain_sets.hpp``, each analysis's own steps into a namespace of
+       its own; the applicability helpers of ``action.cpp`` and ``ground.cpp`` moved to ``planning/programs/common``,
+       the per-program builders named after their program (``create_rpg_program``, ``create_ground_program``, ...);
+       ``formalism/planning`` by at most 3 sources (``BATCH_SIZE``)
+     - ``analysis`` 4.21 GB to 1.58 GB merged, ``planning/lifted/programs`` 5.86 GB to 1.72 GB; tyr 161 TUs to 148, CPU
+       22.0 min to 20.2 min, summed 129.7 GB to 117.2 GB, max 2.12 GB, wall 127 s to 122 s, peak 23.8 GB to 24.5 GB;
+       with the rows above, tyr CPU 36.8 min to 20.2 min, summed 222.7 GB to 117.2 GB, wall 205 s to 122 s, peak
+       26.1 GB to 24.5 GB
+   * - 11
+     - the Python modules' TUs compiled at most 6 at once (``brokkr_limit_compile_jobs``,
+       ``-DRUNIR_PYTHON_COMPILE_JOBS=6``, ``-DTYR_PYTHON_COMPILE_JOBS=6``; no cap by default): they are the heaviest
+       batches, and the library's and tests' TUs take the free slots
+     - runir peak at -j12 38.0/38.4 GB to 34.1/34.2 GB, wall 310 s to 312/308 s (4 at once: 385 s, 35.9 GB); tyr with
+       pytyr 27.6/27.6 GB to 24.6/23.8 GB, wall 104 s to 114/115 s; with all rows above, tyr with pytyr CPU 27.7 min
+       to 14.2 min, summed 180.0 GB to 91.3 GB, wall 158 s to 114 s, peak 25.4 GB to 24.2 GB; runir CPU 79.5 min to
+       55.5 min, summed 381.4 GB to 271.6 GB, max 4.08 GB to 3.62 GB, wall 427 s to 308-314 s, peak 38.4 GB to
+       34.1/34.2/37.0 GB in three runs (the third after reinstalling tyr)
+   * - 11, 14
+     - runir's library (``kr``) batched the same way: sixteen directories, then only the eleven light ones (merged
+       below 2 GB)
+     - sixteen: summed 271.6 GB to 254.0 GB, CPU -2.2 min, but peak 37.0/38.0 GB to 38.9/40.2 GB; eleven: summed
+       -7.6 GB, wall unchanged, peak 38.9/38.3 GB; not applied: batches of 2.5 GB and more compile at once what ran
+       apart, and runir's library holds the build's heaviest sources
+   * - 11
+     - pyrunir sources batched in name order, two or three per directory, and whole directories whose sources share
+       little (``kr/dl/semantics`` 7.56 GB merged, ``kr/ps/ext`` 5.30 GB, ``serialization/kr/dl`` 4.74 GB)
+     - batches of three: max 5.09 GB, peak 41.7 GB; of two: 43.0 GB (``query`` and ``records`` share about 1.2 GB of
+       6.3 GB); not applied: a batch pays off only where its sources share their instantiations
+   * - 14
+     - urd ``IndexedSet``'s empty storage for reads (a function-local static) in a never-destroyed holder, after the
+       weak-symbol scan found its destructor compiled in 136 of 255 runir TUs; runir and tyr against compiled fmt
+       instead of ``FMT_HEADER_ONLY`` (fmt's formatting core is compiled in 81 runir TUs)
+     - no change (at most 0.6 s and 20 MB per TU in either): code compiled in many TUs is not the cost where the front
+       end decides; reverted, and fmt kept header-only
+   * - 24
+     - runir's query optimizer and query statistics collector: their entry points for a constructor of each category
+       and a query of any kind as explicit specializations, defined with the non-template members (the maximal-query
+       optimization, the rewrites of must-pass, distance and nonempty records) in ``src/kr/dl/optimization.cpp``; the
+       syntactic complexity of a constructor or query of any kind the same, as plain overloads; the projection
+       heuristic's ``abstract_edges`` (inline, non-template) moved to its source; clang traces of the 45 heaviest TUs
+       found the optimizer's recursion in 14 of them (13.5 s of 35 s in the query binding)
+     - runir summed memory 271.6 GB to 263.6 GB, CPU 55.5 to 53.3 min, slowest TU 76 s to 71 s, wall 314 s to 288 s,
+       peak 34.1-37.0 GB to 32.5 GB; the optimizer's includers -0.3 to -1.0 GB each (its test 3.0 GB to 2.0 GB)
+   * - 24
+     - pyrunir's serialization: writing a constructor of each category or a query of any kind (``describe_fields``
+       for yggdrasil's dictionary writer) declared beside the generic overloads and defined once in
+       ``serialization/kr/dl/constructor.cpp``; before, the Boolean serializer wrote the concept, role, numerical and
+       query records too
+     - the eleven serialization TUs -0.2 to -0.6 GB each, summed 263.6 GB to 259.7 GB, wall 278 s, peak 33.6 GB
+   * - 24, 5
+     - tyr's public ``optimization.hpp`` without the planner (``details/optimization.hpp``: its normalizer's and
+       planner's in-class members instantiate the operator builder in every includer); ``Evaluation`` and the
+       ``detail::optimize`` declaration moved to the public header, the two tests of the planner's parts include them
+     - runir's DL binding TUs -0.1 to -0.2 GB, summed 259.7 GB to 258.2 GB, peak 31.6 GB, wall 278 s; with all rows
+       above, runir CPU 79.5 to 51.6 min, summed 381.4 GB to 258.2 GB, max 4.08 GB to 3.52 GB, wall 427 s to 278 s,
+       peak 38.4 GB to 31.6 GB
+   * - 4
+     - tyr's ``FDRContext`` holds its builder by ``std::unique_ptr``, its destructor defined in the source: by value, the
+       builder (a slot per record type of tyr's planning formalism) completed in every includer of the task headers;
+       clang over the 88 tyr and runir headers that 30 or more runir TUs include found it (0.9 s of
+       ``fdr_context.hpp``'s 2.8 s, 5.2 s to 4.3 s for ``planning/lifted/task.hpp``)
+     - runir summed 258.2 GB to 247.6 GB, median 1216 MB to 1143 MB, max 3.52 GB to 3.41 GB, CPU 51.6 to 50.5 min, wall
+       278 s to 270/272 s, peak 31.6 GB to 31.9/31.8 GB (two runs); tyr with pytyr summed 91.1 GB to 89.9 GB, max
+       2.99 GB to 2.83 GB, wall 114 s to 112 s, peak 22.0 GB to 22.4 GB; with all rows above, runir CPU 79.5 to 50.5
+       min, summed 381.4 GB to 247.6 GB, max 4.08 GB to 3.41 GB, wall 427 s to 270 s, peak 38.4 GB to 31.8 GB; tyr
+       with pytyr CPU 27.7 to 13.9 min, summed 180.0 GB to 89.9 GB, wall 158 s to 112 s, peak 25.4 GB to 22.4 GB
+   * - 14
+     - precompiled headers (GCC, the headers 42 of 50 pyrunir TUs share); GCC's collector run more often
+       (``--param ggc-min-expand``) on the query binding
+     - precompiled: 33.7 s to 32.4 s, 3.42 GB to 3.44 GB (the headers parse in 5 s, the TU's instantiations dominate);
+       collector at 50: -8% memory, +8% time, at 20: -14%, +34%; neither applied
+   * - 21, 14
+     - urd's facts of a role: the traits a kind asks of the role filtered once per kind and role
+       (``asked_traits``), not checked again for every list of types that plays it
+     - clang -5% on a TU that completes runir's DL repository, GCC unchanged (3.38 s to 3.37 s, same memory); reverted:
+       GCC builds the libraries
+   * - 14
+     - runir compiled with clang 18 instead of GCC 13 (the same flags, LTO off; after rewriting one generic visitor
+       lambda in ``ps/icp/dl/parser.cpp`` as a ``boost::get`` dispatch, on which clang 18 crashed), against tyr
+       compiled with clang 18 too (against the GCC-built tyr the links fail); urd's resolution measured alone first:
+       per Store GCC spends 0.8 MB choosing the container (most of it on the element types' traits, not on the size of
+       ``property_set``: 32 categories instead of 64 change nothing, nor does ``-fconstexpr-cache-depth``), 0.4 MB
+       completing it and 1.1 MB on the Store and its facets
+     - runir: summed memory 247.6 GB to 193.6 GB, median 1143 MB to 894 MB, max 3.41 GB to 2.50 GB, CPU 50.6 to
+       52.6 min, wall 270 s to 284 s, peak at -j12 31.8 GB to 21.8 GB; tyr: summed 113.9 GB to 90.5 GB, max 2.10 GB to
+       1.60 GB, CPU 19.8 to 21.7 min, wall 117 s to 144 s, peak 23.7 GB to 17.9 GB; tests pass (27, 49) and run as fast
+       (tyr's, one at a time, 196 s to 175 s; runir's 5.7 s to 6.0 s); not applied: a choice of toolchain, not of code
+   * - 13, 14
+     - where a Store's 2.15 MB (GCC, completing it) goes, over 120 Stores of sets, sequences and maps of distinct
+       element types, each part switched off in turn in a copy of urd: the choice of the container, its completion,
+       the facets' conditions and each facet
+     - choosing 0.8 MB (the element types' traits), the container 0.4 MB, the facets' conditions 0.15 MB, the facets
+       0.6 MB spread over about fifteen (at most 3 MB over 120 Stores for any one), the Store's own members the rest;
+       constructing one adds 0.4 MB; no part to remove alone: only fewer Stores per TU, or a different design, would
+       shrink it
