@@ -24,7 +24,7 @@ jobs:
         env:
           PYTHON: ${{ steps.python.outputs.python-path }}
         with:
-          # pyright needs the package and its test dependencies in .venv.
+          # pyright needs the package, its test dependencies and libclang (the fallbacks extra) in .venv.
           prepare: |
             "$PYTHON" -m venv .venv
-            .venv/bin/python -m pip install --no-cache-dir -e ".[test]"
+            .venv/bin/python -m pip install --no-cache-dir -e ".[test,fallbacks]"
