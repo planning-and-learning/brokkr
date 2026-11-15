@@ -8,6 +8,10 @@
 #
 #     set(FOO_PYTHON_COMPILE_JOBS "" CACHE STRING "Most pyfoo translation units compiled at once (Ninja); empty: no limit.")
 #     brokkr_limit_compile_jobs(_pyfoo JOBS "${FOO_PYTHON_COMPILE_JOBS}")
+# An empty JOBS is a value, not a missing one (CMP0174); the function keeps the policies set here when it is called.
+if(POLICY CMP0174)
+    cmake_policy(SET CMP0174 NEW)
+endif()
 function(brokkr_limit_compile_jobs target)
     cmake_parse_arguments(PARSE_ARGV 1 ARG "" "JOBS" "")
     if("${ARG_JOBS}" STREQUAL "")
