@@ -15,7 +15,7 @@ whole. The rules about structure are checked beside the patterns:
   component; a Python test (``test_*.py``) imports the component's module or a package that holds it;
 - headers are included: a header under ``include/<lib>/<component>/`` is included by another tracked file.
 
-    python -m pybrokkr.layout <repository>...
+    python -m pybrokkr.rules.layout.files <repository>...
 
 reports each finding as ``<repository>/<path>: <rule>``, then a summary per repository, and exits 1 where any is found.
 A repository is a library where ``include/`` holds one directory, the library's name; without ``include/`` it is a
@@ -28,10 +28,11 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from pybrokkr.references import imports_of, included_paths, includes_of, normalized
+from pybrokkr.rules.references import imports_of, included_paths, includes_of, normalized
 
 NAME = r"[a-z0-9_]+"
 DIRS = rf"(?:{NAME}/)*"
@@ -158,7 +159,7 @@ def tracked(repository: Path) -> list[str]:
     """The files git tracks in `repository`, relative to its root."""
     git = shutil.which("git")
     if git is None:
-        msg = "pybrokkr.layout needs git on PATH"
+        msg = "pybrokkr.rules.layout.files needs git on PATH"
         raise FileNotFoundError(msg)
     listed = subprocess.run([git, "-C", str(repository), "ls-files"], capture_output=True, text=True, check=True)
     return listed.stdout.splitlines()
@@ -322,19 +323,24 @@ def unincluded(repository: Path, files: list[str], lib: str | None) -> list[Find
     ]
 
 
-def check(repository: Path) -> list[Finding]:
-    """Every finding of the layout in `repository`."""
+# The rules of docs/directory_layout.rst this module checks, by ID: the rule's name and its check, which takes the
+# repository, its tracked files and its library (None for a Python package).
+Check = Callable[[Path, list[str], str | None], list[Finding]]
+RULES: dict[str, tuple[str, Check]] = {
+    "L1": ("layout-allowed-files", lambda _, files, lib: unidentified(files) + unmatched(files, lib)),
+    "L2": ("layout-required-files", lambda _, files, lib: missing(files, lib)),
+    "L3": ("layout-mirroring", lambda _, files, lib: unmirrored(files, lib)),
+    "L4": ("layout-stub-packages", lambda _, files, __: unpackaged(files)),
+    "L5": ("layout-unit-test-component", unreferencing),
+    "L6": ("layout-header-included", unincluded),
+}
+
+
+def check(repository: Path, rules: Iterable[str] = RULES) -> list[Finding]:
+    """Every finding of the layout in `repository`, of the `rules` given by ID (all of them by default)."""
     files = tracked(repository)
     lib = library_of(files)
-    return (
-        unidentified(files)
-        + unmatched(files, lib)
-        + missing(files, lib)
-        + unmirrored(files, lib)
-        + unpackaged(files)
-        + unreferencing(repository, files, lib)
-        + unincluded(repository, files, lib)
-    )
+    return [each for rule in rules for each in RULES[rule][1](repository, files, lib)]
 
 
 def where(path: str) -> str:
@@ -352,7 +358,9 @@ def summary(findings: list[Finding]) -> str:
 
 def main() -> int:
     """Report the layout's findings in each repository given; 1 where any is found."""
-    parser = argparse.ArgumentParser(prog="python -m pybrokkr.layout", description=(__doc__ or "").partition("\n\n")[0])
+    parser = argparse.ArgumentParser(
+        prog="python -m pybrokkr.rules.layout.files", description=(__doc__ or "").partition("\n\n")[0]
+    )
     parser.add_argument("repositories", nargs="+", type=Path)
     parser.add_argument("--summary", action="store_true", help="only the counts by rule and directory")
     arguments = parser.parse_args()

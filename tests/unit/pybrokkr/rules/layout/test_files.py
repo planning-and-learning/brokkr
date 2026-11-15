@@ -1,6 +1,6 @@
 # Copyright (C) 2026 Dominik Drexler
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""pybrokkr.layout on a small repository: what it allows, and each rule it reports."""
+"""pybrokkr.rules.layout.files on a small repository: what it allows, and each rule it reports."""
 
 import shutil
 import subprocess
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pybrokkr.layout import REQUIRED, REQUIRED_OF_A_LIBRARY, check
+from pybrokkr.rules.layout.files import REQUIRED, REQUIRED_OF_A_LIBRARY, check
 
 # What each file of the small repository holds, where a rule reads it; every other file is empty.
 CONTENTS = {
@@ -102,7 +102,7 @@ def test_a_python_package_has_no_findings(tmp_path: Path) -> None:
 
 
 def test_brokkr_follows_its_own_layout() -> None:
-    root = Path(__file__).parents[3]
+    root = Path(__file__).parents[5]
     if not (root / ".git").exists():
         pytest.skip("the layout is checked on a checkout: a source archive tracks no files")
     assert check(root) == []

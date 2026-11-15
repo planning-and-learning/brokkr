@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What a source file refers to, read from its text: the headers a C++ file includes, the modules a Python file imports.
 
-The layout's rules about use (pybrokkr.layout, pybrokkr.registered) ask these of every tracked file. Neither needs a
-build: an include is read as it is written, not resolved against the include paths.
+The layout's rules about use (pybrokkr.rules.layout.files, pybrokkr.rules.layout.registered) and the include graph
+(pybrokkr.rules.include.cycles) ask these of every tracked file. None needs a build: an include is read as it is
+written, not resolved against the include paths.
 """
 
 import ast
@@ -45,7 +46,7 @@ def imports_of(path: Path) -> set[str]:
 def included_paths(repository: Path, files: list[str]) -> set[str]:
     """Every include target of the tracked C++ `files`, as written and resolved against the including file's directory.
 
-    A tracked file is included where its path ends with one of these (pybrokkr.references.is_included).
+    A tracked file is included where its path ends with one of these (pybrokkr.rules.references.is_included).
     """
     targets: set[str] = set()
     for each in files:

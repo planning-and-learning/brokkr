@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Every tracked source is built and every test script is run, checked against the configured build.
 
-The layout (pybrokkr.layout) says where a file may be; this says that the build uses it. A test source that no
-``CMakeLists.txt`` names passes the layout, is never compiled, and its tests never run.
+The layout (pybrokkr.rules.layout.files) says where a file may be; this says that the build uses it. A test source that
+no ``CMakeLists.txt`` names passes the layout, is never compiled, and its tests never run.
 
 - A C++ source (``.cpp`` under ``src/``, ``tests/``, ``benchmarks/``, ``exe/``, ``examples/``, ``python/``) is a source
   of a CMake target, is included by a source or a tracked file, or is named in a CMake file of its directory or of one
@@ -11,7 +11,7 @@ The layout (pybrokkr.layout) says where a file may be; this says that the build 
 - A Python script under ``tests/`` is a test pytest finds by its name (``test_*.py``), is named in a CMake file of its
   directory or of one above it, or is imported by a tracked Python file.
 
-    python -m pybrokkr.registered --sources build/brokkr/sources.txt <repository>
+    python -m pybrokkr.rules.layout.registered --sources build/brokkr/sources.txt <repository>
 
 ``sources.txt`` lists the sources of every target, one absolute path per line: ``brokkr_add_rule_tests()`` writes it
 when the build is configured. It is CMake's own list, so it holds each source of a unity batch too, which
@@ -24,8 +24,8 @@ import re
 import sys
 from pathlib import Path, PurePosixPath
 
-from pybrokkr.layout import Finding, tracked
-from pybrokkr.references import CPP, imports_of, included_paths, includes_of, is_included
+from pybrokkr.rules.layout.files import Finding, tracked
+from pybrokkr.rules.references import CPP, imports_of, included_paths, includes_of, is_included
 
 SOURCE_ROOTS = ("src/", "tests/", "benchmarks/", "exe/", "examples/", "python/")
 SCRIPT_ROOTS = ("tests/",)
@@ -105,7 +105,7 @@ def check(repository: Path, sources: set[Path]) -> list[Finding]:
 def main() -> int:
     """Report the sources no target builds and the test scripts nothing runs; 1 where any is found."""
     parser = argparse.ArgumentParser(
-        prog="python -m pybrokkr.registered", description=(__doc__ or "").partition("\n\n")[0]
+        prog="python -m pybrokkr.rules.layout.registered", description=(__doc__ or "").partition("\n\n")[0]
     )
     parser.add_argument(
         "--sources", required=True, type=Path, help="the targets' sources, as brokkr_add_rule_tests writes them"

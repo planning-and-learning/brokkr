@@ -1,12 +1,15 @@
 # Copyright (C) 2026 Dominik Drexler
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Types for the part of libclang's Python bindings pybrokkr.fallbacks and pybrokkr.unity_check read; the bindings
-# declare none.
+# Types for the part of libclang's Python bindings pybrokkr.rules reads (coding.fallbacks, template.unity_check,
+# schema.records); the bindings declare none.
 
 from collections.abc import Iterator
 
 class CursorKind:
+    STRING_LITERAL: CursorKind
+    LAMBDA_EXPR: CursorKind
     BREAK_STMT: CursorKind
+    CALL_EXPR: CursorKind
     CLASS_DECL: CursorKind
     CLASS_TEMPLATE: CursorKind
     CLASS_TEMPLATE_PARTIAL_SPECIALIZATION: CursorKind
@@ -14,16 +17,32 @@ class CursorKind:
     CONSTRUCTOR: CursorKind
     CONTINUE_STMT: CursorKind
     CONVERSION_FUNCTION: CursorKind
+    CXX_ACCESS_SPEC_DECL: CursorKind
+    CXX_BASE_SPECIFIER: CursorKind
     CXX_CATCH_STMT: CursorKind
     CXX_METHOD: CursorKind
+    DECL_REF_EXPR: CursorKind
     DESTRUCTOR: CursorKind
+    FIELD_DECL: CursorKind
     FUNCTION_DECL: CursorKind
     FUNCTION_TEMPLATE: CursorKind
     IF_STMT: CursorKind
+    INCLUSION_DIRECTIVE: CursorKind
+    MACRO_DEFINITION: CursorKind
     MEMBER_REF_EXPR: CursorKind
+    NAMESPACE: CursorKind
+    NAMESPACE_REF: CursorKind
     RETURN_STMT: CursorKind
     STRUCT_DECL: CursorKind
+    TEMPLATE_NON_TYPE_PARAMETER: CursorKind
+    TEMPLATE_REF: CursorKind
+    TEMPLATE_TEMPLATE_PARAMETER: CursorKind
+    TEMPLATE_TYPE_PARAMETER: CursorKind
     TRANSLATION_UNIT: CursorKind
+    TYPE_REF: CursorKind
+    VAR_DECL: CursorKind
+    @property
+    def name(self) -> str: ...
 
 class LinkageKind:
     INTERNAL: LinkageKind
@@ -52,11 +71,22 @@ class Token:
     @property
     def extent(self) -> SourceRange: ...
 
+class Type:
+    @property
+    def spelling(self) -> str: ...
+    def get_canonical(self) -> Type: ...
+    def get_num_template_arguments(self) -> int: ...
+    def get_template_argument_type(self, num: int) -> Type: ...
+
 class Cursor:
     @property
     def kind(self) -> CursorKind: ...
     @property
     def spelling(self) -> str: ...
+    @property
+    def displayname(self) -> str: ...
+    @property
+    def type(self) -> Type: ...
     @property
     def semantic_parent(self) -> Cursor | None: ...
     @property
@@ -69,11 +99,25 @@ class Cursor:
     def walk_preorder(self) -> Iterator[Cursor]: ...
     def get_tokens(self) -> Iterator[Token]: ...
     def is_definition(self) -> bool: ...
+    def get_num_template_arguments(self) -> int: ...
+    def get_template_argument_type(self, num: int) -> Type: ...
+    @property
+    def referenced(self) -> Cursor | None: ...
+    def is_default_method(self) -> bool: ...
+    def is_default_constructor(self) -> bool: ...
+    def is_copy_constructor(self) -> bool: ...
+    def is_move_constructor(self) -> bool: ...
+    def is_deleted_method(self) -> bool: ...
+    def is_copy_assignment_operator_method(self) -> bool: ...
+    def is_move_assignment_operator_method(self) -> bool: ...
+    def get_arguments(self) -> Iterator[Cursor]: ...
 
 class Diagnostic:
     Error: int
     @property
     def severity(self) -> int: ...
+    @property
+    def spelling(self) -> str: ...
 
 class TranslationUnit:
     PARSE_SKIP_FUNCTION_BODIES: int
@@ -87,4 +131,10 @@ class TranslationUnitLoadError(Exception): ...
 class Index:
     @staticmethod
     def create() -> Index: ...
-    def parse(self, path: str, args: list[str] | None = None, options: int = 0) -> TranslationUnit: ...
+    def parse(
+        self,
+        path: str,
+        args: list[str] | None = None,
+        unsaved_files: list[tuple[str, str]] | None = None,
+        options: int = 0,
+    ) -> TranslationUnit: ...

@@ -11,17 +11,20 @@ pytyr, pyrunir). A provider wheel bundles its native library, headers and export
   `brokkr_unity_directories` (unity batches by directory), `brokkr_limit_compile_jobs` (a target's TUs compiled at most
   so many at once; no limit when the count is empty), `brokkr_add_rule_tests` (the layout checks as tests, `ctest -L
   rules`).
-- **Fallback check** (`python -m pybrokkr.fallbacks --compile-commands build/compile_commands.json`, with
+- **Fallback check** (`python -m pybrokkr.rules.coding.fallbacks --compile-commands build/compile_commands.json`, with
   `pybrokkr[fallbacks]`): reports the silent fallbacks of a C++ project, as the coding rules define them.
-- **Compile cost** (`python -m pybrokkr.compile_cost`): records every compile's time and peak memory through CMake's
+- **Compile cost** (`python -m pybrokkr.rules.template.compile_cost`): records every compile's time and peak memory through CMake's
   compiler launcher, compares two builds by object, and finds what a build compiles in more than one translation unit,
   as the template rules measure it.
-- **Layout check** (`python -m pybrokkr.layout <repository>...`): every tracked file of a repository against the
+- **Layout check** (`python -m pybrokkr.rules.layout.files <repository>...`): every tracked file of a repository against the
   directory layout the docs state (an allowlist of patterns, the required files, the mirroring of `include/`, stub
   packages, unit tests that include their component, headers that are included), each finding reported.
-  `python -m pybrokkr.registered --sources <build>/brokkr/sources.txt <repository>` adds what needs the build: every
+  `python -m pybrokkr.rules.layout.registered --sources <build>/brokkr/sources.txt <repository>` adds what needs the build: every
   source built by a target, every test script run.
-- **Unity check** (`python -m pybrokkr.unity_check --compile-commands build/compile_commands.json <directory>...`,
+- **Rule check** (`python -m pybrokkr.rules <rule>... [-C <repository>]`): every rule a check decides, selected by its
+  ID (`L1`), name (`layout-allowed-files`), page letter (`L`), class (`decidable`) or `all`, each finding reported with
+  the rule's ID and name.
+- **Unity check** (`python -m pybrokkr.rules.template.unity_check --compile-commands build/compile_commands.json <directory>...`,
   with `pybrokkr[fallbacks]`): the file-local functions that a unity batch of each directory would make overloads of
   each other.
 - **PEP 517 backend** (`pybrokkr.build_backend.ProviderBackend`): scikit-build-core, with the providers' prefixes put
@@ -54,7 +57,7 @@ project(mypkg VERSION "${MYPKG_VERSION}" LANGUAGES CXX)
 
 In a manual configure, pass `-Dbrokkr_DIR="$(python -m pybrokkr --cmake-dir)"`.
 
-## Rules
+## Rules and workflows
 
-The rules the libraries share (the release cycle, the template and include rules and the coding rules) are
+The rules the libraries share (layout, include, template and coding) and their workflows (the release cycle) are
 maintained here, in `docs/`, and published at <https://planning-and-learning.github.io/brokkr/>.

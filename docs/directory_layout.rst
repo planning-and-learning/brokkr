@@ -1,5 +1,5 @@
-Directory layout
-================
+Layout
+======
 
 Every library of the chain (urd, yggdrasil, loki, tyr, vefr, runir) has the same layout, so that a reader, a build
 script and a check find the same thing in the same place in each. ``<lib>`` is the library's name (``tyr``), ``py<lib>``
@@ -140,7 +140,7 @@ Repository root
      - The linters' settings.
    * - ``include/<lib>/``
      - The public headers, one directory per component (``include/tyr/planning/``). Headers follow the
-       :doc:`template_rules`: declarations in ``declarations.hpp`` and ``<name>_decl.hpp``, constraints in
+       :doc:`include_rules`: declarations in ``declarations.hpp`` and ``<name>_decl.hpp``, constraints in
        ``<name>_concepts.hpp``, definitions instantiated by the library in ``detail/<name>_impl.hpp``.
    * - ``src/``
      - The library's sources, mirroring ``include/<lib>/`` (``src/planning/`` for ``include/tyr/planning/``); headers used
@@ -305,10 +305,19 @@ A unit test copied for a second component is a law not yet written: make it one,
 Allowed files
 -------------
 
-A library's repository holds exactly the files that match one of the patterns below: each tracked path (``git
-ls-files``, relative to the repository root) must match a pattern whole (Python's ``re.fullmatch``). A path that matches
-none is not allowed. Files that are generated (build directories, ``__pycache__``, a LaTeX document's ``.aux``, ``.log``
-and ``.pdf``, compiled documentation) are not tracked and so never need a pattern.
+- .. rule:: layout-allowed-files
+  .. rule:: L1
+
+  :ruleid:`L1` :decidable:`decidable`
+  **A repository holds only allowed files.** A library's repository holds exactly the files that match one of the
+  patterns below: each tracked path (``git ls-files``, relative to the repository root) must match a pattern whole
+  (Python's ``re.fullmatch``). A path that matches none is not allowed.
+
+  :Name: ``layout-allowed-files``
+  :Check: ``python -m pybrokkr.rules L1``
+
+Files that are generated (build directories, ``__pycache__``, a LaTeX document's ``.aux``, ``.log`` and ``.pdf``,
+compiled documentation) are not tracked and so never need a pattern.
 
 The patterns use two abbreviations: ``NAME`` is ``[a-z0-9_]+``, a lowercase snake_case name, and ``DIRS`` is
 ``(?:NAME/)*``, any depth of component directories. ``<lib>`` is the library's name.
@@ -399,30 +408,76 @@ The patterns use two abbreviations: ``NAME`` is ``[a-z0-9_]+``, a lowercase snak
 
 These rules are about structure, which a pattern cannot state, and are checked beside the patterns:
 
-- **Required files**: the files every repository has, and those a library has besides (*Repository root*), are
+- .. rule:: layout-required-files
+  .. rule:: L2
+
+  :ruleid:`L2` :decidable:`decidable`
+  **Required files**: the files every repository has, and those a library has besides (*Repository root*), are
   tracked.
-- **Mirroring**: a directory under ``tests/unit/`` or ``benchmarks/`` (other than ``support/``, ``suites/``,
+
+  :Name: ``layout-required-files``
+  :Check: ``python -m pybrokkr.rules L2``
+
+- .. rule:: layout-mirroring
+  .. rule:: L3
+
+  :ruleid:`L3` :decidable:`decidable`
+  **Mirroring**: a directory under ``tests/unit/`` or ``benchmarks/`` (other than ``support/``, ``suites/``,
   ``results/`` and ``tools/``), and a directory of ``python/src/py<lib>/`` that holds binding sources (``.cpp``,
   ``.hpp``) or is a parent of one that does, names a component that exists under ``include/<lib>/`` or ``src/``.
-- **Stub packages**: every directory under ``typings/`` has an ``__init__.pyi``.
-- **A unit test refers to its component**: a C++ test under ``tests/unit/<component>/`` includes a header of that
+
+  :Name: ``layout-mirroring``
+  :Check: ``python -m pybrokkr.rules L3``
+
+- .. rule:: layout-stub-packages
+  .. rule:: L4
+
+  :ruleid:`L4` :decidable:`decidable`
+  **Stub packages**: every directory under ``typings/`` has an ``__init__.pyi``.
+
+  :Name: ``layout-stub-packages``
+  :Check: ``python -m pybrokkr.rules L4``
+
+- .. rule:: layout-unit-test-component
+  .. rule:: L5
+
+  :ruleid:`L5` :decidable:`decidable`
+  **A unit test refers to its component**: a C++ test under ``tests/unit/<component>/`` includes a header of that
   component (``<lib>/<component>/...``, ``<lib>/<component>.hpp``, or one the sources keep under
   ``src/<component>/``). A Python test (``test_*.py``) under ``tests/unit/<component>/`` or
   ``python/tests/<component>/`` imports the component's module or a package that holds it, as Python reaches a
   submodule through its package; ``python/tests/downstream/`` is of no component. A test that includes nothing of the
   directory it is in is in the wrong directory, or is no unit test (a ``main.cpp``, shared fixtures:
   ``tests/support/``).
-- **A header is included**: a header under ``include/<lib>/<component>/`` is included by another tracked file. A
+
+  :Name: ``layout-unit-test-component``
+  :Check: ``python -m pybrokkr.rules L5``
+
+- .. rule:: layout-header-included
+  .. rule:: L6
+
+  :ruleid:`L6` :decidable:`decidable`
+  **A header is included**: a header under ``include/<lib>/<component>/`` is included by another tracked file. A
   header at the top of ``include/<lib>/`` is an entry a user includes.
+
+  :Name: ``layout-header-included``
+  :Check: ``python -m pybrokkr.rules L6``
 
 One rule needs the configured build, as only CMake knows what a target builds:
 
-- **Every source is built, every test script is run**: a tracked ``.cpp`` under ``src/``, ``tests/``,
+- .. rule:: layout-sources-built
+  .. rule:: L7
+
+  :ruleid:`L7` :decidable:`decidable`
+  **Every source is built, every test script is run**: a tracked ``.cpp`` under ``src/``, ``tests/``,
   ``benchmarks/``, ``exe/``, ``examples/`` or ``python/`` is a source of a target, is included by a source or a
   tracked file, or is named in a ``CMakeLists.txt`` of its directory or of one above it. A tracked Python script
   under ``tests/`` (other than ``tests/support/``) is a test pytest finds by its name (``test_*.py``), is named in
   such a ``CMakeLists.txt``, or is imported by a tracked Python file. A test in the right directory that nothing
   registers is never compiled, and its absence fails nothing.
+
+  :Name: ``layout-sources-built``
+  :Check: ``python -m pybrokkr.rules L7`` (after configuring the build)
 
 Not allowed, among others: a source file under ``include/``; a ``profiling/`` directory (it is ``benchmarks/``);
 results of a run that nothing reads; a third party's paper (link to it from the docs);
@@ -435,9 +490,11 @@ Status
 
 Checked against each library's tracked files (November 2026), every library follows the rules.
 
-``python -m pybrokkr.layout <repository>...`` checks a repository against this page: the patterns and the rules
-about structure. ``python -m pybrokkr.registered --sources <build>/brokkr/sources.txt <repository>`` checks the rule
-that needs the build. Each reports its findings and exits 1 where any is found.
+``python -m pybrokkr.rules <rule>... [-C <repository>]`` checks the rules given by ID, name, page letter (``L``),
+class or ``all``; the ``:Check:`` of each rule above is that command.
+``python -m pybrokkr.rules.layout.files <repository>...`` checks a repository against this page: the patterns and the
+rules about structure. ``python -m pybrokkr.rules.layout.registered --sources <build>/brokkr/sources.txt <repository>``
+checks the rule that needs the build. Each reports its findings and exits 1 where any is found.
 
 A library runs both as tests: ``brokkr_add_rule_tests()`` in its ``tests/CMakeLists.txt`` registers ``layout`` and
 ``registered`` (``ctest -L rules``) and writes the sources of every target to ``<build>/brokkr/sources.txt`` when the

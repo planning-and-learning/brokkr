@@ -1,4 +1,4 @@
-# Unity batches by directory (brokkr's template rules, rule 11).
+# Unity batches by directory: brokkr's template rule T5 (template-split-by-cost).
 
 # Compiles the sources of `target` that sit directly in each of DIRECTORIES (relative to the target's source directory)
 # as one translation unit per directory, where ENABLED is true. Sources of one directory that work with the same types

@@ -1,10 +1,10 @@
 # Copyright (C) 2026 Dominik Drexler
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""pybrokkr.references: what a source file includes or imports, read from its text."""
+"""pybrokkr.rules.references: what a source file includes or imports, read from its text."""
 
 from pathlib import Path
 
-from pybrokkr.references import imports_of, included_paths, includes_of, is_included
+from pybrokkr.rules.references import imports_of, included_paths, includes_of, is_included
 
 
 def test_includes_are_read_as_written(tmp_path: Path) -> None:

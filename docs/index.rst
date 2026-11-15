@@ -8,10 +8,24 @@ brokkr is what the planning-and-learning libraries (urd, yggdrasil, loki, tyr, r
 - the rules below, which apply to every one of the libraries and are maintained only here.
 
 .. toctree::
+   :hidden:
+   :caption: Introduction
+
+   Overview <self>
+   reading_the_rules
+
+.. toctree::
    :maxdepth: 2
    :caption: Rules
 
-   release_cycle
    directory_layout
+   include_rules
    template_rules
+   schema_rules
    coding_rules
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Workflows
+
+   release_cycle

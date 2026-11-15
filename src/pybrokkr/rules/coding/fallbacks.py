@@ -15,7 +15,7 @@ no code of its own are reported, so that every finding is one (sound, not comple
 An alternative, which meets the same contract another way (a derived operation's default, dispatch on a
 representation), is written as an overload or with an ``else`` of its own, and is not reported.
 
-    python -m pybrokkr.fallbacks --compile-commands build/compile_commands.json
+    python -m pybrokkr.rules.coding.fallbacks --compile-commands build/compile_commands.json
 
 parses every source of the project that the build compiles (with its flags), and reports each finding in the project's
 own files (its headers included), by shape, file and function. It only reports.
@@ -98,7 +98,7 @@ def resource_dir() -> str:
     """Clang's own headers (stddef.h, ...), which the PyPI wheel does not carry: those of the clang installed."""
     clang = shutil.which("clang++") or shutil.which("clang")
     if clang is None:
-        sys.exit("pybrokkr.fallbacks: needs clang++ for clang's own headers (clang++ -print-resource-dir)")
+        sys.exit("pybrokkr.rules.coding.fallbacks: needs clang++ for clang's own headers (clang++ -print-resource-dir)")
     return subprocess.run([clang, "-print-resource-dir"], capture_output=True, text=True, check=True).stdout.strip()
 
 
@@ -226,7 +226,9 @@ def findings_of(job: tuple[dict[str, str], str, str]) -> tuple[list[Finding], li
 
 def main() -> int:
     """Reports the silent fallbacks of the project; 0 always (report only)."""
-    parser = argparse.ArgumentParser(prog="python -m pybrokkr.fallbacks", description="Silent fallbacks in C++ code.")
+    parser = argparse.ArgumentParser(
+        prog="python -m pybrokkr.rules.coding.fallbacks", description="Silent fallbacks in C++ code."
+    )
     parser.add_argument("--compile-commands", required=True, help="the build's compile_commands.json")
     parser.add_argument("--root", default=".", help="the project, whose own files are checked (default: .)")
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1, help="sources parsed at once")
@@ -243,7 +245,7 @@ def main() -> int:
             found.update(each)
             errors += failed
     for line in errors:
-        sys.stderr.write(f"pybrokkr.fallbacks: parse error: {line}\n")
+        sys.stderr.write(f"pybrokkr.rules.coding.fallbacks: parse error: {line}\n")
     say(f"{len(sources)} sources parsed, {len(errors)} with parse errors")
     say(f"fallbacks: {len(found)}")
     for shape, spelled in SHAPES.items():

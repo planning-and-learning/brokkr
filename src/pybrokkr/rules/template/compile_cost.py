@@ -1,23 +1,23 @@
 # Copyright (C) 2026 Dominik Drexler
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Compile cost per translation unit, as the template rules measure it (docs/template_rules.rst, rule 13).
+"""Compile cost per translation unit, as template rule T18 (template-measure) measures it.
 
 Record a build: every compile's wall time and the compiler's peak memory (max RSS), one line per object, through
 CMake's compiler launcher:
 
-    cmake -B build "-DCMAKE_CXX_COMPILER_LAUNCHER=python;-m;pybrokkr.compile_cost;record;/tmp/cost.log"
+    cmake -B build "-DCMAKE_CXX_COMPILER_LAUNCHER=python;-m;pybrokkr.rules.template.compile_cost;record;/tmp/cost.log"
     ninja -C build clean && ninja -C build
 
 Summarize it, or compare two (the largest drops and rises by object):
 
-    python -m pybrokkr.compile_cost summary /tmp/before.log [/tmp/after.log]
+    python -m pybrokkr.rules.template.compile_cost summary /tmp/before.log [/tmp/after.log]
 
 Find what the build compiles again and again: the functions each object defines as weak symbols (implicit template
 instantiations, and inline functions not inlined everywhere), summed by template over all objects. A template the
 library instantiates explicitly that still shows up weak in other objects is one those objects do not see declared
-(an opt-in extern list they do not include, rule 9):
+(an opt-in extern list they do not include; T3, template-opt-in-extern-lists):
 
-    python -m pybrokkr.compile_cost weak build
+    python -m pybrokkr.rules.template.compile_cost weak build
 """
 
 import argparse
@@ -138,7 +138,7 @@ def weak(build: str, rows: int) -> None:
 def main() -> int:
     """Run the command line."""
     summary_line = (__doc__ or "").partition("\n\n")[0]
-    parser = argparse.ArgumentParser(prog="python -m pybrokkr.compile_cost", description=summary_line)
+    parser = argparse.ArgumentParser(prog="python -m pybrokkr.rules.template.compile_cost", description=summary_line)
     commands = parser.add_subparsers(dest="command", required=True)
     recording = commands.add_parser("record", help="compiler launcher: run the command, log its time and max RSS")
     recording.add_argument("log")

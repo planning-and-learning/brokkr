@@ -2,8 +2,8 @@
 
 # Registers, for the project that calls it (in its tests/CMakeLists.txt):
 #
-#   layout       every tracked file against the directory layout (python -m pybrokkr.layout)
-#   registered   every tracked source built by a target, every test script run (python -m pybrokkr.registered)
+#   layout       every tracked file against the directory layout (python -m pybrokkr.rules.layout.files)
+#   registered   every tracked source built by a target, every test script run (python -m pybrokkr.rules.layout.registered)
 #
 # Both read the tracked files, so nothing is registered outside a git checkout (a source archive). `registered` reads
 # the sources of every target, which this writes to <build>/brokkr/sources.txt once the project's directories are
@@ -18,8 +18,8 @@ function(brokkr_add_rule_tests)
         find_package(Python 3.11 REQUIRED COMPONENTS Interpreter)
     endif()
     set(sources "${PROJECT_BINARY_DIR}/brokkr/sources.txt")
-    add_test(NAME layout COMMAND "${Python_EXECUTABLE}" -m pybrokkr.layout "${PROJECT_SOURCE_DIR}")
-    add_test(NAME registered COMMAND "${Python_EXECUTABLE}" -m pybrokkr.registered --sources "${sources}"
+    add_test(NAME layout COMMAND "${Python_EXECUTABLE}" -m pybrokkr.rules.layout.files "${PROJECT_SOURCE_DIR}")
+    add_test(NAME registered COMMAND "${Python_EXECUTABLE}" -m pybrokkr.rules.layout.registered --sources "${sources}"
                                      "${PROJECT_SOURCE_DIR}")
     set_tests_properties(layout registered PROPERTIES LABELS rules)
     # A deferred call's arguments are expanded when it runs, in the directory's scope, where this function's variables

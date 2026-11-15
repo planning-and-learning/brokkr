@@ -1,12 +1,12 @@
 # Copyright (C) 2026 Dominik Drexler
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""pybrokkr.registered on a small repository: what counts as built or run, and what it reports."""
+"""pybrokkr.rules.layout.registered on a small repository: what counts as built or run, and what it reports."""
 
 import shutil
 import subprocess
 from pathlib import Path
 
-from pybrokkr.registered import check
+from pybrokkr.rules.layout.registered import check
 
 FILES = {
     "src/core/store.cpp": "",  # a source of a target

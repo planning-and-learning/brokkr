@@ -1,4 +1,4 @@
-# Compile job pools (brokkr's template rules, rule 11).
+# Compile job pools: brokkr's template rule T5 (template-split-by-cost).
 
 # At most JOBS of the translation units of `target` compile at once (Ninja's job pools; other generators ignore them):
 # where a target's TUs are the build's heaviest (bindings, unity batches), they would otherwise take every parallel slot

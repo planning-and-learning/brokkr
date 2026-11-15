@@ -1,5 +1,5 @@
-Coding rules
-============
+Coding
+======
 
 Every repository checks its code with `peachycheck <https://github.com/drexlerd/peachycheck>`__, locally, in the
 agents' hooks and in CI, with the linters its ``peachycheck.yml`` enables. Two rules hold for every linter:
@@ -64,7 +64,7 @@ The library, its tests and its benchmarks; the bindings add the rules under `nan
   place. What fails, fails loudly: a compile error where a type lacks what it needs, an exception where an operation
   fails, a signal in the result type (``std::optional``, a ``bool``, an iterator to the end) where absence is part of
   the contract. Three shapes are always fallbacks, since their failure path has no code of its own, and
-  ``python -m pybrokkr.fallbacks --compile-commands build/compile_commands.json`` reports them:
+  ``python -m pybrokkr.rules.coding.fallbacks --compile-commands build/compile_commands.json`` reports them:
 
   - ``if constexpr (requires ...) S`` without ``else``, the ``requires`` not negated and ``S`` not leaving: where the
     type lacks it, nothing happens;
@@ -145,7 +145,7 @@ Folders with their own ``.clang-tidy`` inherit the repository's and turn off mor
 - **Benchmarks**: literal values are the benchmark sizes and data, and benchmarks register themselves during static
   initialization, which may throw.
 
-Headers and templates also follow the :doc:`template_rules`.
+Headers and templates also follow the :doc:`include_rules` and :doc:`template_rules` rules.
 
 nanobind
 --------

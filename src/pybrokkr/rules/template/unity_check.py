@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """File-local functions that a unity batch would put into one translation unit, found with libclang (from PyPI).
 
-A batch (``brokkr_unity_directories``, template rules, rule 11) compiles the sources of a directory as one TU. A name
-that two of them declare twice then fails to compile, except functions with internal linkage (``static``, or in an
-anonymous namespace) of one name and different parameters: they become overloads of each other, and a call may resolve
-to another file's function without an error. This reports them, for each directory given:
+A batch (``brokkr_unity_directories``; template rule T5, template-split-by-cost) compiles the sources of a
+directory as one TU. A name that two of them declare twice then fails to compile, except functions with internal linkage
+(``static``, or in an anonymous namespace) of one name and different parameters: they become overloads of each other,
+and a call may resolve to another file's function without an error. This reports them, for each directory given:
 
-    python -m pybrokkr.unity_check --compile-commands build/compile_commands.json src/a src/b
+    python -m pybrokkr.rules.template.unity_check --compile-commands build/compile_commands.json src/a src/b
 
 with the build configured to compile each source on its own (``<PROJECT>_UNITY_BUILD=OFF``), so that the compile
 commands list every source.
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import clang.cindex as ci
 
-from pybrokkr.fallbacks import flags_of, resource_dir
+from pybrokkr.rules.coding.fallbacks import flags_of, resource_dir
 
 FUNCTIONS = {ci.CursorKind.FUNCTION_DECL, ci.CursorKind.FUNCTION_TEMPLATE}
 
@@ -54,7 +54,7 @@ def file_local_functions(entry: dict[str, str], clang_headers: str) -> set[str]:
 def main() -> int:
     """Report each directory's file-local functions declared in more than one of its sources; 1 where any is."""
     parser = argparse.ArgumentParser(
-        prog="python -m pybrokkr.unity_check", description=(__doc__ or "").partition("\n\n")[0]
+        prog="python -m pybrokkr.rules.template.unity_check", description=(__doc__ or "").partition("\n\n")[0]
     )
     parser.add_argument("--compile-commands", required=True, type=Path)
     parser.add_argument("directories", nargs="+", type=Path)
