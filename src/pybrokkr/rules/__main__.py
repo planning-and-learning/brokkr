@@ -4,8 +4,9 @@
 
     python -m pybrokkr.rules <rule>... [-C <repository>] [--sources <file>] [--compile-commands <file>] [-j <jobs>]
 
-A rule is selected by its ID (``L1``), its name (``layout-allowed-files``), the letter of its page (``L``: every rule
-of the page that has a check), its class (``decidable``) or ``all``. A rule that needs the configured build (L7) reads
+A rule is selected by its ID (``L1.1``; a rule's ID selects its parts too: ``L1`` is L1.1 to L1.7), its name
+(``layout-allowed-files``), the letter of its page (``L``: every rule
+of the page that has a check), its class (``decidable``) or ``all``. A rule that needs the configured build (L1.7) reads
 the targets' sources from ``--sources``, by default ``<repository>/build/brokkr/sources.txt``, where
 ``brokkr_add_rule_tests()`` writes them. Without them, a rule named by its ID or name is an error, and one selected by
 a page, a class or ``all`` is reported as not checked. Reports each finding as
@@ -27,7 +28,7 @@ from pybrokkr.rules.schema import records
 
 @dataclass(frozen=True)
 class Inputs:
-    """What a rule may need beyond the repository: the build's sources (L7), its compile database (S)."""
+    """What a rule may need beyond the repository: the build's sources (L1.7), its compile database (S)."""
 
     sources: set[Path]
     compile_commands: Path | None
@@ -60,7 +61,7 @@ def _schema_rule(rule: str) -> Callable[[Path, Inputs], list[files.Finding]]:
 
 RULES: dict[str, Rule] = {
     **{rule: Rule(name, "decidable", _layout_rule(rule)) for rule, (name, _) in files.RULES.items()},
-    "L7": Rule(
+    "L1.7": Rule(
         "layout-sources-built",
         "decidable",
         lambda repository, inputs: registered.check(repository, inputs.sources),
@@ -70,6 +71,7 @@ RULES: dict[str, Rule] = {
     "S1": Rule("schema-record-data", "decidable", _schema_rule("S1"), "compile commands"),
     "S2": Rule("schema-record-view", "decidable", _schema_rule("S2"), "compile commands"),
     "S3": Rule("schema-record-binding", "decidable", _schema_rule("S3"), "compile commands"),
+    "S4": Rule("schema-value", "decidable", _schema_rule("S4"), "compile commands"),
 }
 
 
@@ -80,7 +82,9 @@ def selected(names: list[str]) -> list[str]:
         match = [
             rule
             for rule, info in RULES.items()
-            if each in {"all", rule, info.name, info.kind} or (re.fullmatch("[A-Z]", each) and rule[0] == each)
+            if each in {"all", rule, info.name, info.kind}
+            or rule.startswith(f"{each}.")
+            or (re.fullmatch("[A-Z]", each) and rule[0] == each)
         ]
         if not match:
             message = f"{each}: no rule with a check has this ID, name, page letter or class"
@@ -104,7 +108,11 @@ def main() -> int:
     parser.add_argument("--sources", type=Path, help="the targets' sources (default: build/brokkr/sources.txt)")
     parser.add_argument("--compile-commands", type=Path, help="the compile database (default: under build/)")
     parser.add_argument(
-        "-j", "--jobs", type=int, default=os.cpu_count() or 1, help="files parsed at once (default: the number of cores)"
+        "-j",
+        "--jobs",
+        type=int,
+        default=os.cpu_count() or 1,
+        help="files parsed at once (default: the number of cores)",
     )
     arguments = parser.parse_args()
     try:

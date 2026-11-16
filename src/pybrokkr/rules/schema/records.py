@@ -11,11 +11,10 @@ that does not parse is a finding, not a skip: what it holds is not known.
 
 import functools
 import json
-import os
 import re
 from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import repeat
 from pathlib import Path
 
@@ -47,6 +46,10 @@ class Record:
     line: int
     file: str = ""
     parameters: tuple[str, ...] = ()
+    # Its template header (parameters and requires clause), which tells apart the specializations of one tag
+    header: str = ""
+    # Its tag with its namespaces, by which it is paired with its mixins
+    qualified: str = ""
 
 
 def tag_of(spelling: str, template: str) -> str:
@@ -59,6 +62,61 @@ def tag_of(spelling: str, template: str) -> str:
             end = position
             break
     return re.sub(r"(?:\b\w+)?::", "", inner[:end]).replace(" ", "")
+
+
+def qualified_of(spelling: str, template: str) -> str:
+    """The first template argument of `template`<...> in `spelling` as written, with its namespaces.
+
+    No namespace leads and no spaces are kept: ``runir::kr::ps::icp::Program``. Records and mixins are paired by it, so
+    that tags of one name in two namespaces are not.
+    """
+    inner = spelling[spelling.index(f"{template}<") + len(template) + 1 :]
+    depth, end = 0, len(inner)
+    for position, char in enumerate(inner):
+        depth += {"<": 1, ">": -1}.get(char, 0)
+        if depth < 0 or (depth == 0 and char == ","):
+            end = position
+            break
+    return re.sub(r"(^|[<,])::", r"\1", inner[:end].replace(" ", ""))
+
+
+def header_of(cursor: ci.Cursor, without: str = "") -> str:
+    """The template header of the specialization `cursor`, its tokens before ``struct``.
+
+    Its parameters and requires clause tell apart the specializations of one tag (data<Concept<F, Tag>> for each shape
+    of Tag). The parameter named `without` (a view mixin's view, V) is left out, so that a record and its mixins have
+    the same header.
+    """
+    words: list[str] = []
+    for token in cursor.get_tokens():
+        if token.spelling in {"struct", "class"}:
+            break
+        words.append(token.spelling)
+    if not words or words[:2] != ["template", "<"]:
+        return " ".join(words)
+    # The parameter list: from its "<" to its matching ">", split at its top-level commas.
+    depth, end = 0, len(words)
+    parameters: list[list[str]] = []
+    current: list[str] = []
+    for position in range(1, len(words)):
+        word = words[position]
+        depth += {"<": 1, ">": -1}.get(word, 0)
+        if depth == 0:
+            end = position
+            break
+        if position == 1:
+            continue
+        if depth == 1 and word == ",":
+            parameters.append(current)
+            current = []
+        else:
+            current.append(word)
+    if current:
+        parameters.append(current)
+    kept = [each for each in parameters if not (without and each and each[-1] == without)]
+    return " ".join(["template", "<", " , ".join(" ".join(each) for each in kept), ">", *words[end + 1 :]]).replace(
+        "<  >", "< >"
+    )
 
 
 def members_named(tokens: list[str]) -> list[str]:
@@ -107,8 +165,11 @@ def declared_in(cursor: ci.Cursor, header: Path) -> bool:
 
 
 def own_nodes(unit: ci.TranslationUnit, path: Path) -> Iterator[ci.Cursor]:
-    """The nodes of the source `path` (parsed: `unit`) in preorder: the subtrees of its own top-level declarations, not
-    those of the headers it includes, which are never walked."""
+    """The nodes of the source `path` (parsed: `unit`) in preorder.
+
+    These are the subtrees of its own top-level declarations, not those of the headers it includes, which are never
+    walked.
+    """
     for child in unit.cursor.get_children():
         if declared_in(child, path):
             yield from child.walk_preorder()
@@ -246,7 +307,10 @@ def record_findings(cursor: ci.Cursor) -> tuple[Record, list[str]]:
         for each in cursor.get_children()
         if each.kind in {ci.CursorKind.TEMPLATE_TYPE_PARAMETER, ci.CursorKind.TEMPLATE_NON_TYPE_PARAMETER}
     )
-    return Record(tag, names, cursor.location.line, parameters=parameters), say
+    qualified = qualified_of(cursor.displayname or cursor.type.spelling, "data")
+    return Record(
+        tag, names, cursor.location.line, parameters=parameters, header=header_of(cursor), qualified=qualified
+    ), say
 
 
 @dataclass(frozen=True)
@@ -261,36 +325,224 @@ class Mixin:
     line: int
     methods: list[str]
     data_reads: int
+    header: str = ""
+    qualified: str = ""
+    # Its own template parameters but the view's (a generic mixin's, e.g. T and F of view_mixin<Atom<T, F>, V>)
+    parameters: tuple[str, ...] = ()
+    # The tokens of each member function, by name (overloads joined): what a getter reads
+    bodies: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
+    # The view parameter's name (V)
+    view: str = "V"
+    # A held form's mixin (of data<T> or builder<T>) that inherits the tag's own (view_mixin<T, V>): its field getters
+    # are its base's
+    inherits: bool = False
+    # What S2 does not allow of its members that only forward (forwarding)
+    forwarders: tuple[str, ...] = ()
+
+
+def view_parameter(spelling: str) -> str:
+    """The view parameter of a view_mixin<K, V> spelling, V: its last template argument."""
+    inner = spelling[spelling.index("view_mixin<") + len("view_mixin<") : spelling.rindex(">")]
+    depth, last = 0, 0
+    for position, char in enumerate(inner):
+        depth += {"<": 1, ">": -1}.get(char, 0)
+        if depth == 0 and char == ",":
+            last = position + 1
+    return inner[last:].strip()
+
+
+CHAIN = re.compile(r"\*?(?:(\w+)\(\)\.)*(\w+)\(\)")
+
+
+def forwarding(name: str, words: list[str]) -> str:
+    """What S2 does not allow of the function `name` with the tokens `words`: that it only forwards; or empty.
+
+    It forwards where its body is a single ``return`` of a chain of calls without arguments
+    (``get_symbol().get_name()``, ``self().context()``) whose last call has its own name, or that is one call on the
+    view itself (an alias of a member it has).
+    """
+    if "{" not in words or words[-1] != "}":
+        return ""
+    body = words[words.index("{") + 1 : -1]
+    if len(body) < 2 or body[0] != "return" or body[-1] != ";":  # noqa: PLR2004 (return, ;)
+        return ""
+    chain = "".join(body[1:-1])
+    if not CHAIN.fullmatch(chain):
+        return ""
+    calls = re.findall(r"(\w+)\(\)", chain)
+    if calls and calls[0] == "self":
+        calls = calls[1:]
+    if calls and calls[-1] == name:
+        return f"{name}() forwards to {chain}, which has its name: its callers read that path"
+    if len(calls) == 1:
+        return f"{name}() is an alias of {calls[0]}() of the view: its callers call that"
+    return ""
 
 
 def mixin_of(cursor: ci.Cursor, file: str) -> Mixin:
     """The mixin `cursor` defines."""
     key = tag_of(cursor.displayname, "view_mixin")
+    held = False
     for wrapper in ("data<", "builder<"):
         if key.startswith(wrapper) and key.endswith(">"):
             key = key[len(wrapper) : -1]
+            held = True
     methods = [
         each.spelling
         for each in cursor.get_children()
         if each.kind in {ci.CursorKind.CXX_METHOD, ci.CursorKind.FUNCTION_TEMPLATE, ci.CursorKind.FIELD_DECL}
     ]
     words = [token.spelling for token in cursor.get_tokens()]
+    # The view's data(): self().data() (a mixin reaches its view through self() alone); a field's own data(), such as
+    # a vector's (member<...>().data()), is not the view's.
     reads = sum(
-        1 for i in range(1, len(words) - 2) if words[i - 1] in {".", "->"} and words[i : i + 3] == ["data", "(", ")"]
+        1
+        for i in range(4, len(words) - 2)
+        if words[i - 4 : i] == ["self", "(", ")", "."] and words[i : i + 3] == ["data", "(", ")"]
     )
-    return Mixin(key, file, cursor.location.line, methods, reads)
+    view = view_parameter(cursor.displayname)
+    qualified = qualified_of(cursor.displayname, "view_mixin")
+    for wrapper in ("urd::data<", "data<", "urd::builder<", "builder<"):
+        if qualified.startswith(wrapper) and qualified.endswith(">"):
+            qualified = qualified[len(wrapper) : -1]
+            break
+    parameters = tuple(
+        each.spelling
+        for each in cursor.get_children()
+        if each.kind in {ci.CursorKind.TEMPLATE_TYPE_PARAMETER, ci.CursorKind.TEMPLATE_NON_TYPE_PARAMETER}
+        and each.spelling != view
+    )
+    bodies: dict[str, list[str]] = {}
+    for each in cursor.get_children():
+        if each.kind in {ci.CursorKind.CXX_METHOD, ci.CursorKind.FUNCTION_TEMPLATE}:
+            bodies.setdefault(each.spelling, []).extend(token.spelling for token in each.get_tokens())
+    forwarders = tuple(
+        what
+        for each in cursor.get_children()
+        if each.kind in {ci.CursorKind.CXX_METHOD, ci.CursorKind.FUNCTION_TEMPLATE} and each.spelling != "self"
+        if (what := forwarding(each.spelling, [token.spelling for token in each.get_tokens()]))
+    )
+    inherits = held and any(
+        each.kind == ci.CursorKind.CXX_BASE_SPECIFIER and "view_mixin<" in each.type.spelling
+        for each in cursor.get_children()
+    )
+    return Mixin(
+        key,
+        file,
+        cursor.location.line,
+        methods,
+        reads,
+        header_of(cursor, view),
+        qualified,
+        parameters,
+        bodies,
+        view,
+        inherits,
+        forwarders,
+    )
+
+
+def split_template(spelling: str) -> tuple[str, list[str]]:
+    """A template-id as its name and its arguments, split at their top-level commas: ``A<B<C>,D>`` is A, [B<C>, D]."""
+    if "<" not in spelling or not spelling.endswith(">"):
+        return spelling, []
+    name, inner = spelling[: spelling.index("<")], spelling[spelling.index("<") + 1 : -1]
+    arguments: list[str] = []
+    depth, start = 0, 0
+    for position, char in enumerate(inner):
+        depth += {"<": 1, ">": -1}.get(char, 0)
+        if depth == 0 and char == ",":
+            arguments.append(inner[start:position])
+            start = position + 1
+    arguments.append(inner[start:])
+    return name, [each for each in arguments if each]
+
+
+def matches(pattern: str, value: str, parameters: tuple[str, ...], bound: dict[str, str]) -> bool:
+    """Whether the tag `pattern` of a mixin, over its `parameters`, matches the tag `value` of a record.
+
+    A parameter matches any argument (the same one each time it occurs, recorded in `bound`), anything else its own
+    spelling, with its arguments matched in turn.
+    """
+    if pattern in parameters:
+        return bound.setdefault(pattern, value) == value
+    pattern_name, pattern_arguments = split_template(pattern)
+    value_name, value_arguments = split_template(value)
+    # Arguments left out are the template's defaults (Query<> is Query<void>), which a parameter of the pattern matches.
+    defaulted = pattern_arguments[len(value_arguments) :]
+    if pattern_name != value_name or len(value_arguments) > len(pattern_arguments):
+        return False
+    if any(each not in parameters or bound.setdefault(each, "<default>") != "<default>" for each in defaulted):
+        return False
+    pattern_arguments = pattern_arguments[: len(value_arguments)]
+    if not pattern_arguments and not defaulted:
+        return pattern == value
+    return all(matches(p, v, parameters, bound) for p, v in zip(pattern_arguments, value_arguments, strict=True))
+
+
+def covers(mixin: Mixin, record: Record) -> bool:
+    """Whether `mixin` serves `record`: its tag, as a pattern over its own parameters, matches the record's.
+
+    A mixin over a bare parameter (view_mixin<T, V> requires is_x<T>) names no tag: which records it serves its
+    requires-clause says, which S2 does not evaluate, so it serves none here.
+    """
+    if mixin.qualified in mixin.parameters:
+        return False
+    return matches(mixin.qualified, record.qualified, mixin.parameters, {})
+
+
+def reads_field(mixin: Mixin, getter: str, name: str) -> bool:
+    """Whether the getter `getter` of `mixin` reads the field `name`: ``record_of<V>::<name>`` in its body."""
+    words = mixin.bodies.get(getter, [])
+    target = ["record_of", "<", mixin.view, ">", "::", name]
+    return any(words[i : i + len(target)] == target for i in range(len(words) - len(target) + 1))
 
 
 def mixin_findings(mixin: Mixin, record: Record) -> list[str]:
-    """What S2 does not allow of `mixin`, one of the view mixins of `record`."""
-    getters = ["self", *(f"get_{name}" for name in record.fields)]
+    """What S2 does not allow of `mixin`, one of the view mixins of `record` (its own or a generic one).
+
+    It has ``self()`` first, a getter per field of the record, in field order, each reading its field. That the field
+    getters of every record a mixin serves stand before its other members is order_findings'.
+    """
+    getters = [f"get_{name}" for name in record.fields]
     found: list[str] = []
-    # One getter per field, in field order, first; members derived from them may follow.
-    if mixin.methods[: len(getters)] != getters:
-        found.append(f"{record.tag}: view_mixin starts with {mixin.methods[: len(getters)]}, not {getters}")
+    if mixin.methods[:1] != ["self"]:
+        found.append(f"{record.tag}: view_mixin {mixin.qualified} starts with {mixin.methods[:1]}, not ['self']")
+    missing = [each for each in getters if each not in mixin.methods]
+    if missing:
+        found.append(f"{record.tag}: view_mixin {mixin.qualified} has no {missing}")
+    present = [each for each in dict.fromkeys(mixin.methods) if each in getters]
+    if not missing and present != getters:
+        found.append(
+            f"{record.tag}: view_mixin {mixin.qualified} has its field getters {present}, not in field order {getters}"
+        )
+    unread = [
+        f"get_{name}"
+        for name in record.fields
+        if f"get_{name}" in mixin.methods and not reads_field(mixin, f"get_{name}", name)
+    ]
+    if unread:
+        found.append(
+            f"{record.tag}: view_mixin getters {unread} do not read their field through record_of<{mixin.view}>"
+        )
     if mixin.data_reads:
         found.append(f"{record.tag}: view_mixin reads data() {mixin.data_reads} times, not through member<>")
     return found
+
+
+def order_findings(mixin: Mixin, records: list[Record]) -> list[str]:
+    """What S2 does not allow of the order of `mixin`, which serves `records`.
+
+    After ``self()`` come the field getters of all of them, before every other member: one strict order, of a mixin of
+    one record or a generic one.
+    """
+    getters = {f"get_{name}" for record in records for name in record.fields}
+    members = [each for each in mixin.methods if each != "self"]
+    others = [position for position, each in enumerate(members) if each not in getters]
+    last_getter = max((position for position, each in enumerate(members) if each in getters), default=-1)
+    if others and others[0] < last_getter:
+        return [f"{mixin.qualified}: view_mixin has {members[others[0]]!r} before its field getters end"]
+    return []
 
 
 @dataclass(frozen=True)
@@ -300,12 +552,18 @@ class Database:
     flags: dict[Path, list[str]]
     default: list[str]
     resource: str
+    # A binding header's: those of the first binding source (python/src), which has the bindings' include paths
+    binding: list[str] = field(default_factory=list[str])
 
     def unit(self, path: Path) -> tuple[ci.TranslationUnit | None, str]:
-        """`path` parsed: a header with the first source's flags, a source with its own; a source that has none is not
-        parsed (no other source's flags stand in for its own), and what is wrong is the error."""
+        """`path` parsed: a header with the first source's flags, a source with its own.
+
+        A source that has none is not parsed (no other source's flags stand in for its own), and what is wrong is the
+        error.
+        """
         if path.suffix != ".cpp":
-            return parse(path, self.default, self.resource)
+            under_bindings = "python/src" in path.as_posix() and self.binding
+            return parse(path, self.binding if under_bindings else self.default, self.resource)
         if path not in self.flags:
             return None, "not in the compile database, nor included by a source that is"
         return parse(path, self.flags[path], self.resource)
@@ -337,43 +595,48 @@ def database(repository: Path, compile_commands: Path) -> Database:
     if not flags:
         message = f"{compile_commands} has no compile command of a source under {repository}"
         raise ValueError(message)
-    return Database(flags, next(iter(flags.values())), resource_dir())
-
-
-def arguments_of(tag: str) -> tuple[str, list[str]]:
-    """A tag's template and its arguments: Relation<Schema> -> (Relation, [Schema])."""
-    if "<" not in tag:
-        return tag, []
-    name, inner = tag[: tag.index("<")], tag[tag.index("<") + 1 : -1]
-    parts: list[str] = []
-    depth, current = 0, ""
-    for char in inner:
-        depth += {"<": 1, ">": -1}.get(char, 0)
-        if char == "," and depth == 0:
-            parts.append(current)
-            current = ""
-        else:
-            current += char
-    return name, [*parts, current]
+    no_flags: list[str] = []
+    binding = next((each for source, each in flags.items() if "python/src" in source.as_posix()), no_flags)
+    return Database(flags, next(iter(flags.values())), resource_dir(), binding)
 
 
 def binds(record: Record, tag: str) -> bool:
-    """Whether a bind_data of `tag` binds `record`: equal, or a member of its family (its parameters are any)."""
-    if record.tag == tag:
-        return True
-    name, arguments = arguments_of(record.tag)
-    bound_name, bound_arguments = arguments_of(tag)
-    return (
-        name == bound_name
-        and len(arguments) == len(bound_arguments)
-        and all(a == b or a in record.parameters for a, b in zip(arguments, bound_arguments, strict=True))
-    )
+    """Whether a bind_data of `tag` binds `record`: equal, or a member of its family.
+
+    A member of its family is one the record's tag, as a pattern over its parameters (nested ones too,
+    Query<AtomicStateTag<T>>), matches.
+    """
+    return record.tag == tag or matches(record.tag, tag, record.parameters, {})
 
 
 RECORD_CLASSES = {"urd::data", "urd::index_view", "urd::borrowed_view", "urd::owning_view", "urd::shared_view"}
 REFERENCES = {ci.CursorKind.TYPE_REF, ci.CursorKind.TEMPLATE_REF}
 ALIASES = {ci.CursorKind.TYPE_ALIAS_DECL, ci.CursorKind.TYPEDEF_DECL}
 CONSTRUCTIONS = {ci.CursorKind.VAR_DECL, ci.CursorKind.CALL_EXPR, ci.CursorKind.UNEXPOSED_EXPR}
+
+
+def written_argument(words: list[str]) -> str:
+    """The first template argument of the ``bind_data<...>`` among the tokens `words`, as written, without spaces.
+
+    A ``>>`` closes two levels, one character at a time; it is empty where there is none.
+    """
+    if "bind_data" not in words:
+        return ""
+    start = words.index("bind_data") + 1
+    if start >= len(words) or words[start] != "<":
+        return ""
+    depth, spelled = 1, ""
+    for word in words[start + 1 :]:
+        if word in {">", ">>"}:
+            for char in word:
+                depth -= 1
+                if depth == 0:
+                    return spelled
+                spelled += char
+            continue
+        depth += word.count("<")
+        spelled += word
+    return ""
 
 
 def bound(unit: ci.TranslationUnit, path: Path) -> set[str]:
@@ -386,18 +649,35 @@ def bound(unit: ci.TranslationUnit, path: Path) -> set[str]:
     for call in own_nodes(unit, path):
         if call.kind == ci.CursorKind.CALL_EXPR and call.spelling == "bind_data" and declared_in(call, path):
             function = call.referenced
-            if function is not None and function.get_num_template_arguments() > 0:
+            if function is None or function.get_num_template_arguments() <= 0:
+                # A dependent call (in a template: bind_data<State<Kind>>) has no instantiation to read: its argument
+                # as written, from its tokens.
+                words = [token.spelling for token in call.get_tokens()]
+                tag = written_argument(words)
+                if tag:
+                    tags.add(re.sub(r"(?:\b\w+)?::", "", tag))
+                continue
+            if function.get_num_template_arguments() > 0:
                 spelled = function.get_template_argument_type(0).get_canonical().spelling
                 tags.add(re.sub(r"(?:\b\w+)?::", "", spelled).replace(" ", ""))
                 # The argument as written, where it is an alias: libclang hands out the argument's type desugared.
                 written = next((each for each in call.walk_preorder() if each.kind in REFERENCES), None)
                 if written is not None and written.referenced is not None and written.referenced.kind in ALIASES:
                     tags.add(written.referenced.spelling)
+    # In a template that is not instantiated here (bind_data<State<Kind>> in a header's function template), libclang
+    # exposes no call: the argument as written, from the file's own tokens.
+    text = re.sub(r"//[^\n]*|/\*.*?\*/", " ", path.read_text(errors="replace"), flags=re.DOTALL)
+    words = re.findall(r">>|::|[A-Za-z_]\w*|[<>(),]", text)
+    for start, word in enumerate(words):
+        if word == "bind_data" and (tag := written_argument(words[start:])):
+            tags.add(re.sub(r"(?:\b\w+)?::", "", tag))
     return tags
 
 
 BINDS = ("bind_data", "bind_view", "class_<")
-DEFINES = re.compile(r"struct\s+(?:::)?(?:urd::)?(?:data|view_mixin)<")
+DEFINES = re.compile(r"struct\s+(?:::)?(?:urd::)?(?:data|view_mixin)<|\bauto\s+fields\(\)")
+# What a value (S4: a struct of fields that is no record) declares besides fields()
+VALUE_MEMBERS = ("name", "identifying_members")
 VIEWS = ("urd::index_view<", "urd::borrowed_view<", "urd::owning_view<", "urd::shared_view<")
 
 
@@ -412,27 +692,38 @@ def qualified(declaration: ci.Cursor) -> str:
     return "::".join(reversed(names))
 
 
+def aliased(declaration: ci.Cursor) -> ci.Cursor | None:
+    """What the alias or alias template `declaration` names: an alias template's alias, an alias's written type."""
+    if declaration.kind == ci.CursorKind.TYPE_ALIAS_TEMPLATE_DECL:
+        return next((each for each in declaration.get_children() if each.kind == ci.CursorKind.TYPE_ALIAS_DECL), None)
+    written = next((each for each in declaration.walk_preorder() if each.kind in REFERENCES), None)
+    return None if written is None else written.referenced
+
+
 def named(reference: ci.Cursor) -> str:
-    """The class or class template a type reference names, through aliases and alias templates: ``urd::data`` for V
-    of ``using V = urd::data<Tag>``; "" where it names none (a template parameter)."""
-    declaration: ci.Cursor | None = reference.referenced
-    while declaration is not None:
-        if declaration.kind == ci.CursorKind.TYPE_ALIAS_TEMPLATE_DECL:
-            children = declaration.get_children()
-            declaration = next((each for each in children if each.kind == ci.CursorKind.TYPE_ALIAS_DECL), None)
-        elif declaration.kind in {ci.CursorKind.TYPE_ALIAS_DECL, ci.CursorKind.TYPEDEF_DECL}:
-            written = next((each for each in declaration.walk_preorder() if each.kind in REFERENCES), None)
-            declaration = None if written is None else written.referenced
-        elif declaration.kind in {ci.CursorKind.CLASS_TEMPLATE, ci.CursorKind.CLASS_DECL, ci.CursorKind.STRUCT_DECL}:
-            return qualified(declaration)
-        else:
-            return ""
+    """The class or class template a type reference names, through aliases and alias templates.
+
+    It is ``urd::data`` for V of ``using V = urd::data<Tag>``; "" where it names none (a template parameter).
+    """
+    declaration = reference.referenced
+    while declaration is not None and (
+        declaration.kind in ALIASES or declaration.kind == ci.CursorKind.TYPE_ALIAS_TEMPLATE_DECL
+    ):
+        declaration = aliased(declaration)
+    if declaration is not None and declaration.kind in {
+        ci.CursorKind.CLASS_TEMPLATE,
+        ci.CursorKind.CLASS_DECL,
+        ci.CursorKind.STRUCT_DECL,
+    }:
+        return qualified(declaration)
     return ""
 
 
 def constructed(cursor: ci.Cursor) -> str:
-    """The class or class template the nanobind::class_ that `cursor` constructs binds (``named``); "" where it
-    constructs none."""
+    """The class or class template the nanobind::class_ that `cursor` constructs binds (``named``).
+
+    It is "" where it constructs none.
+    """
     references = [each for each in cursor.walk_preorder() if each.kind in REFERENCES]
     for position, each in enumerate(references[:-1]):
         referenced = each.referenced
@@ -441,24 +732,36 @@ def constructed(cursor: ci.Cursor) -> str:
     return ""
 
 
+def constructs(cursor: ci.Cursor, path: Path) -> bool:
+    """Whether `cursor`, of the source `path`, may construct a class there.
+
+    A class is bound where it is constructed (a variable, a call of its constructor, unnamed in a template); a .def on
+    one is not, nor is a variable that holds the class bind_data or bind_view returned.
+    """
+    if cursor.kind not in CONSTRUCTIONS or not declared_in(cursor, path):
+        return False
+    if cursor.kind == ci.CursorKind.CALL_EXPR and cursor.spelling not in {"class_", ""}:
+        return False
+    return not (
+        cursor.kind == ci.CursorKind.VAR_DECL
+        and any(
+            each.kind == ci.CursorKind.CALL_EXPR and each.spelling in {"bind_data", "bind_view"}
+            for each in cursor.walk_preorder()
+        )
+    )
+
+
 def hand_bound(unit: ci.TranslationUnit, path: Path) -> list[tuple[int, str]]:
-    """The classes of a record's data or view that the binding source `path` (parsed: `unit`) defines itself: (line,
-    record tag).
+    """The classes of a record's data or view that the binding source `path` (parsed: `unit`) defines itself.
+
+    Each is (line, record tag).
 
     A class bind_data or bind_view defines is in urd's header, not in `path`, so only what the file writes by hand is
     found.
     """
     found: set[tuple[int, str]] = set()
     for cursor in own_nodes(unit, path):
-        if cursor.kind not in CONSTRUCTIONS or not declared_in(cursor, path):
-            continue
-        # A class is bound where it is constructed (a variable, a call of its constructor, unnamed in a template); a
-        # .def on one is not, nor is a variable that holds the class bind_data or bind_view returned.
-        if cursor.kind == ci.CursorKind.CALL_EXPR and cursor.spelling not in {"class_", ""}:
-            continue
-        if cursor.kind == ci.CursorKind.VAR_DECL and any(
-            each.kind == ci.CursorKind.CALL_EXPR and each.spelling in {"bind_data", "bind_view"} for each in cursor.walk_preorder()
-        ):
+        if not constructs(cursor, path):
             continue
         bound = cursor.type.get_canonical()
         dependent = "type-parameter" in bound.spelling or bound.spelling == "auto"
@@ -479,26 +782,60 @@ def hand_bound(unit: ci.TranslationUnit, path: Path) -> list[tuple[int, str]]:
             found.add((cursor.location.line, tag_of(argument, "data")))
         elif argument.startswith(VIEWS):
             found.add((cursor.location.line, tag_of(argument, argument[len("urd::") : argument.index("<")])))
+        else:
+            # Any other class, by its class or template with its namespaces: a value's (S4) is bound by bind_value.
+            found.add((cursor.location.line, "class " + argument.split("<", 1)[0]))
     return sorted(found)
 
 
-def file_findings(repository: Path, file: str, data: Database) -> tuple[list[Record], list[Mixin], list[Finding]]:
-    """The records and view mixins `file` defines, and what of its records S1 does not allow."""
+def value_of(cursor: ci.Cursor) -> tuple[str, list[str]] | None:
+    """The value `cursor` defines: its name with its namespaces and the members of VALUE_MEMBERS it lacks.
+
+    A value (S4) is a struct or class template, no record, with a static fields(); None where `cursor` defines none.
+    """
+    if cursor.kind not in {ci.CursorKind.STRUCT_DECL, ci.CursorKind.CLASS_DECL, ci.CursorKind.CLASS_TEMPLATE}:
+        return None
+    if not cursor.is_definition():
+        return None
+    members = {each.spelling for each in cursor.get_children()}
+    if "fields" not in members:
+        return None
+    return qualified(cursor), [each for each in VALUE_MEMBERS if each not in members]
+
+
+def file_findings(
+    repository: Path, file: str, data: Database
+) -> tuple[list[Record], list[Mixin], list[Finding], list[tuple[str, str, int]], list[Finding]]:
+    """The records, view mixins and values `file` defines, and what of them S1 and S4 do not allow.
+
+    A value is (its name with its namespaces, file, line).
+    """
     path = (repository / file).resolve()
     unit, error = data.unit(path)
     if unit is None:
-        return [], [], [Finding(file, f"does not parse: {error}")]
+        return [], [], [Finding(file, f"does not parse: {error}")], [], []
+    values: list[tuple[str, str, int]] = []
+    value_found: list[Finding] = []
     records: list[Record] = []
     mixins: list[Mixin] = []
     found: list[Finding] = []
     for cursor in top_level(unit.cursor, path):
         if in_urd(cursor, "data"):
             record, say = record_findings(cursor)
-            records.append(Record(record.tag, record.fields, record.line, file, record.parameters))
+            records.append(
+                Record(record.tag, record.fields, record.line, file, record.parameters, record.header, record.qualified)
+            )
             found.extend(Finding(f"{file}:{record.line}", f"data<{record.tag}> {what}") for what in say)
         elif in_urd(cursor, "view_mixin"):
             mixins.append(mixin_of(cursor, file))
-    return records, mixins, found
+        elif in_urd(cursor, "builder"):
+            continue
+        elif (value := value_of(cursor)) is not None:
+            name, missing = value
+            values.append((name, file, cursor.location.line))
+            if missing:
+                value_found.append(Finding(f"{file}:{cursor.location.line}", f"value {name} has no {missing}"))
+    return records, mixins, found, values, value_found
 
 
 def from_bound_record(expression: ci.Cursor) -> bool:
@@ -540,8 +877,10 @@ def derived_name(method: str, words: list[str]) -> str:
 
 
 def derived_findings(unit: ci.TranslationUnit, path: Path, file: str) -> list[Finding]:
-    """What S3 does not allow of the .def calls on the classes bind_data and bind_view return in source `file` (its
-    path `path`, parsed: `unit`)."""
+    """What S3 does not allow of the .def calls on the classes bind_data and bind_view return in source `file`.
+
+    Its path is `path`, parsed: `unit`.
+    """
     found: list[Finding] = []
     for call in own_nodes(unit, path):
         if call.kind != ci.CursorKind.CALL_EXPR or call.spelling != "def" or not declared_in(call, path):
@@ -576,9 +915,11 @@ def derived_findings(unit: ci.TranslationUnit, path: Path, file: str) -> list[Fi
 def binding_read(
     repository: Path, file: str, data: Database
 ) -> tuple[str, str | None, set[str], list[tuple[int, str]], list[Finding]]:
-    """The binding source `file` parsed, read and dropped: the tags it binds, its classes bound by hand, its derived
-    findings (S3); or why it does not parse, with nothing read. Only these are kept, never its tree, which holds
-    everything the source includes."""
+    """The binding source `file` parsed, read and dropped.
+
+    What is read: the tags it binds, its classes bound by hand, its derived findings (S3); or why it does not parse,
+    with nothing read. Only these are kept, never its tree, which holds everything the source includes.
+    """
     path = (repository / file).resolve()
     unit, error = data.unit(path)
     if unit is None:
@@ -586,13 +927,61 @@ def binding_read(
     return file, None, bound(unit, path), hand_bound(unit, path), derived_findings(unit, path, file)
 
 
+def pair_findings(
+    found: dict[str, list[Finding]], records: list[Record], mixins: list[Mixin], binding: set[str]
+) -> None:
+    """Adds to `found` what S2 and S3 do not allow of `records` paired with their `mixins`, `binding` the tags bound."""
+    mixins = [each for each in mixins if not each.inherits]
+    by_key: dict[tuple[str, str], list[Mixin]] = {}
+    for mixin in mixins:
+        by_key.setdefault((mixin.qualified, mixin.header), []).append(mixin)
+    served: dict[int, tuple[Mixin, list[Record]]] = {}
+    for record in records:
+        where = f"{record.file}:{record.line}"
+        key = (record.qualified, record.header)
+        # Its own mixin (of its template header) where it has one, as C++ takes the more specialized; else the generic
+        # ones whose tag covers its own (view_mixin<Atom<T, F>, V> for data<Atom<LiftedTag, F>>).
+        own = by_key.get(key, [])
+        generic = [] if own else [each for each in mixins if covers(each, record)]
+        if not own and not generic:
+            found["S2"].append(Finding(where, f"{record.tag}: has no urd::view_mixin<{record.tag}, V>"))
+        for mixin in own + generic:
+            found["S2"].extend(Finding(f"{mixin.file}:{mixin.line}", what) for what in mixin_findings(mixin, record))
+            served.setdefault(id(mixin), (mixin, []))[1].append(record)
+        # A library's records are bound; a test's own records are not.
+        if record.file.startswith("include/") and not any(binds(record, tag) for tag in binding):
+            found["S3"].append(Finding(where, f"{record.tag} is not bound with urd::python::bind_data"))
+    for mixin, served_records in served.values():
+        found["S2"].extend(
+            Finding(f"{mixin.file}:{mixin.line}", what) for what in order_findings(mixin, served_records)
+        )
+
+
+def hand_findings(
+    found: dict[str, list[Finding]], file: str, by_hand: list[tuple[int, str]], records: list[Record], values: set[str]
+) -> None:
+    """Adds to `found` the classes the binding source `file` binds by hand: a record's (S3), a value's (S4)."""
+    for line, tag in by_hand:
+        where = f"{file}:{line}"
+        if tag.startswith("class "):
+            if tag.removeprefix("class ") in values:
+                found["S4"].append(
+                    Finding(where, f"value {tag.removeprefix('class ')} is bound by hand, not by bind_value")
+                )
+        elif tag == "*" or any(binds(record, tag) for record in records):
+            found["S3"].append(
+                Finding(where, f"{tag}: its data or view is bound by hand, not by bind_data or bind_view")
+            )
+
+
 @functools.cache
-def check(repository: Path, compile_commands: Path, jobs: int = os.cpu_count() or 1) -> dict[str, list[Finding]]:
-    """The findings of the record schemas in `repository`, by rule (S1, S2, S3).
+def check(repository: Path, compile_commands: Path, jobs: int | None = None) -> dict[str, list[Finding]]:
+    """The findings of the record and value schemas in `repository`, by rule (S1, S2, S3, S4).
 
     Every tracked header and source that defines a urd::data or urd::view_mixin specialization is parsed once (a header
     alone, a source with its own compile command); a record's view mixins are those of its tag, as T, data<T> or
-    builder<T>, wherever they are defined. A file that does not parse is a finding: of S1 where it defines records, of S3
+    builder<T>, wherever they are defined. A file that does not parse is a finding: of S1 where it defines records, of
+    S3
     where it binds them. A source is parsed with its own compile command, or with that of the unity source that includes
     it; one that has neither is not parsed with another's. `jobs` files are parsed at once, each in a process of its own
     that hands back what it read, in the files' order.
@@ -603,7 +992,7 @@ def check(repository: Path, compile_commands: Path, jobs: int = os.cpu_count() o
         each
         for each in files
         if each.startswith("python/src/")
-        and each.endswith(".cpp")
+        and each.endswith((".cpp", ".hpp"))
         and any(word in (repository / each).read_text(errors="replace") for word in BINDS)
     ]
     defining = [
@@ -619,31 +1008,29 @@ def check(repository: Path, compile_commands: Path, jobs: int = os.cpu_count() o
     binding = {tag for _, _, tags, _, _ in read for tag in tags}
     records: list[Record] = []
     mixins: list[Mixin] = []
-    found: dict[str, list[Finding]] = {"S1": [], "S2": [], "S3": []}
-    for more_records, more_mixins, findings in defined:
+    found: dict[str, list[Finding]] = {"S1": [], "S2": [], "S3": [], "S4": []}
+    values: set[str] = set()
+    for more_records, more_mixins, findings, more_values, value_findings in defined:
         records.extend(more_records)
         mixins.extend(more_mixins)
         found["S1"].extend(findings)
-    by_tag: dict[str, list[Mixin]] = {}
+        values.update(name for name, _, _ in more_values)
+        found["S4"].extend(value_findings)
+    # A record's mixins: those of its tag (with its namespaces) and its template header (one specialization of a tag per
+    # shape of its parameters, e.g. data<Concept<F, Tag>> for each concept Tag satisfies, has the mixin of the same
+    # header).
+    # A held form's mixin that inherits the tag's (S2: the mixins of data<T> and builder<T> inherit or specialize it)
+    # has its base's getters: it is not checked again.
+    # Every mixin, a held form's that inherits too, has no member that only forwards.
     for mixin in mixins:
-        by_tag.setdefault(mixin.tag, []).append(mixin)
-    for record in records:
-        where = f"{record.file}:{record.line}"
-        if record.tag not in by_tag:
-            found["S2"].append(Finding(where, f"{record.tag}: has no urd::view_mixin<{record.tag}, V>"))
-        for mixin in by_tag.get(record.tag, []):
-            found["S2"].extend(Finding(f"{mixin.file}:{mixin.line}", what) for what in mixin_findings(mixin, record))
-        # A library's records are bound; a test's own records are not.
-        if record.file.startswith("include/") and not any(binds(record, tag) for tag in binding):
-            found["S3"].append(Finding(where, f"{record.tag} is not bound with urd::python::bind_data"))
+        found["S2"].extend(
+            Finding(f"{mixin.file}:{mixin.line}", f"{mixin.qualified}: {what}") for what in mixin.forwarders
+        )
+    pair_findings(found, records, mixins, binding)
     for each, error, _, by_hand, derived in read:
         if error is not None:
             found["S3"].append(Finding(each, f"does not parse: {error}"))
             continue
-        found["S3"].extend(
-            Finding(f"{each}:{line}", f"{tag}: its data or view is bound by hand, not by bind_data or bind_view")
-            for line, tag in by_hand
-            if tag == "*" or any(binds(record, tag) for record in records)
-        )
+        hand_findings(found, each, by_hand, records, values)
         found["S3"].extend(derived)
     return found

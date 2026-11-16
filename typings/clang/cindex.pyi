@@ -39,7 +39,11 @@ class CursorKind:
     TEMPLATE_TEMPLATE_PARAMETER: CursorKind
     TEMPLATE_TYPE_PARAMETER: CursorKind
     TRANSLATION_UNIT: CursorKind
+    TYPE_ALIAS_DECL: CursorKind
+    TYPE_ALIAS_TEMPLATE_DECL: CursorKind
     TYPE_REF: CursorKind
+    TYPEDEF_DECL: CursorKind
+    UNEXPOSED_EXPR: CursorKind
     VAR_DECL: CursorKind
     @property
     def name(self) -> str: ...

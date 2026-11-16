@@ -15,7 +15,8 @@ project_copyright = "2026, Dominik Drexler"
 extensions = ["sphinx.ext.githubpages"]
 
 # A rule's ID and its class (reading_the_rules.rst): the ID in bold, the class a colored badge; a list of rules shows no
-# bullets, as each rule starts with its ID.
+# bullets, as each rule starts with its ID; its statement (the paragraph with its ID) stands in a box above its
+# explanation.
 rst_prolog = """
 .. role:: ruleid
 .. role:: decidable
@@ -35,6 +36,41 @@ rst_prolog = """
    span.process { background: #616161; }
    span.ruleid { font-weight: 700; margin-right: 0.3em; }
    li:has(> p > span.ruleid) { list-style: none; }
+   /* A rule's statement (its first paragraph: ID, class, the rule itself) in a box; its explanation follows below. */
+   li > p:has(> span.ruleid) {
+     border: 1px solid var(--color-brand-primary);
+     border-left-width: 0.4em;
+     background: color-mix(in srgb, var(--color-brand-primary) 12%, var(--color-background-primary));
+     padding: 0.8em 1em;
+     margin: 1.2em 0 0.8em;
+     border-radius: 0.3em;
+     font-size: 1.05em;
+     box-shadow: 0 1px 3px color-mix(in srgb, var(--color-foreground-primary) 15%, transparent);
+   }
+   /* Its name and check, right below the statement, close the box: one line each, the label before the value. */
+   li > p:has(> span.ruleid):has(+ dl.field-list) {
+     margin-bottom: 0;
+     border-bottom: none;
+     border-radius: 0.3em 0.3em 0 0;
+     box-shadow: none;
+   }
+   li > p:has(> span.ruleid) + dl.field-list {
+     display: grid;
+     grid-template-columns: max-content 1fr;
+     gap: 0.15em 0.8em;
+     margin: 0 0 0.8em;
+     padding: 0.4em 1em 0.7em;
+     border: 1px solid var(--color-brand-primary);
+     border-top: 1px dashed color-mix(in srgb, var(--color-brand-primary) 40%, transparent);
+     border-left-width: 0.4em;
+     border-radius: 0 0 0.3em 0.3em;
+     background: color-mix(in srgb, var(--color-brand-primary) 12%, var(--color-background-primary));
+     box-shadow: 0 1px 3px color-mix(in srgb, var(--color-foreground-primary) 15%, transparent);
+     font-size: 0.9em;
+   }
+   li > p:has(> span.ruleid) + dl.field-list > dt,
+   li > p:has(> span.ruleid) + dl.field-list > dd { margin: 0; padding: 0; }
+   li > p:has(> span.ruleid) + dl.field-list > dd > p { margin: 0; }
    </style>
 """
 

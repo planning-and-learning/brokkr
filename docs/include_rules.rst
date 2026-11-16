@@ -13,48 +13,60 @@ Headers
   .. rule:: I1
 
   :ruleid:`I1` :decidable:`decidable`
-  **Declaration headers declare.** ``declarations.hpp`` contains forward declarations, aliases, enums and tags. It
-  includes only other ``declarations.hpp`` or ``*_concepts.hpp`` headers and light standard or yggdrasil core headers
-  (``yggdrasil/core/*``, ``yggdrasil/formalism/builder.hpp``).
+  **Declaration headers declare.**
 
   :Name: ``include-declaration-headers``
+
+  ``declarations.hpp`` contains forward declarations, aliases, enums and tags. It
+  includes only other ``declarations.hpp`` or ``*_concepts.hpp`` headers and light standard or yggdrasil core headers
+  (``yggdrasil/core/*``, ``yggdrasil/formalism/builder.hpp``).
 
 - .. rule:: include-concept-headers
   .. rule:: I2
 
   :ruleid:`I2` :decidable:`decidable`
   **Concepts used as constraints live in** ``<name>_concepts.hpp``, next to the header that implements them, with no
-  implementation includes. Forward declarations that own default template arguments (``Node<Kind, State = ...>``) live
-  there too; the definition then omits the defaults.
+  implementation includes.
 
   :Name: ``include-concept-headers``
+
+  Forward declarations that own default template arguments (``Node<Kind, State = ...>``) live
+  there too; the definition then omits the defaults.
 
 - .. rule:: include-data-headers
   .. rule:: I3
 
   :ruleid:`I3` :decidable:`decidable`
-  **Data headers hold data.** ``*_data.hpp`` defines ``urd::data<T>`` with indices and values only. Helpers that take
-  views are templates over the view context, or live in the view header.
+  **Data headers hold data.**
 
   :Name: ``include-data-headers``
+
+  ``*_data.hpp`` defines ``urd::data<T>`` with indices and values only. Helpers that take
+  views are templates over the view context, or live in the view header.
 
 - .. rule:: include-no-cycles
   .. rule:: I4
 
   :ruleid:`I4` :decidable:`decidable`
-  **No header include cycles.** No header includes itself, directly or through other headers. In a cycle, the header
-  that is included second sees the first one only partly, so what compiles depends on which header a file includes
-  first. The check reads the ``#include`` lines of every tracked file, in every ``#if`` branch, so it also reports a
-  cycle that only a configuration not built would close.
+  **No header include cycles.**
 
   :Name: ``include-no-cycles``
   :Check: ``python -m pybrokkr.rules I4``
+
+  No header includes itself, directly or through other headers. In a cycle, the header
+  that is included second sees the first one only partly, so what compiles depends on which header a file includes
+  first. The check reads the ``#include`` lines of every tracked file, in every ``#if`` branch, so it also reports a
+  cycle that only a configuration not built would close.
 
 - .. rule:: include-hold-by-pointer
   .. rule:: I5
 
   :ruleid:`I5` :judgment:`judgment`
-  **Hold heavy types by pointer or reference with declaration-only includes.** Where the header otherwise keeps the
+  **Hold heavy types by pointer or reference with declaration-only includes.**
+
+  :Name: ``include-hold-by-pointer``
+
+  Where the header otherwise keeps the
   pointee incomplete, dereference a smart pointer with ``*ptr.get()``, not ``*ptr``, in inline code: the overloaded
   ``operator*`` makes argument-dependent lookup complete every template argument of the ``shared_ptr``, which
   instantiates the pointee. Raw pointers and pointees that are complete anyway are not affected. A header that uses a
@@ -71,26 +83,30 @@ Headers
   declare the members that need the element complete (size, element access, move assignment, destructor) and define
   them out of class with the other hidden definitions (:rule:`T2`).
 
-  :Name: ``include-hold-by-pointer``
-
 - .. rule:: include-include-what-you-use
   .. rule:: I6
 
   :ruleid:`I6` :judgment:`judgment`
-  **Include what you use.** A header compiles on its own. Library code, tests and executables include the components
+  **Include what you use.**
+
+  :Name: ``include-include-what-you-use``
+
+  A header compiles on its own. Library code, tests and executables include the components
   they use, never umbrella headers such as ``tyr/planning/planning.hpp``. This includes the formatter headers of every
   type that is formatted (``tyr/planning/formatter.hpp``, ``yggdrasil/formatting/cista_formatters.hpp``). Measure
   third-party headers on their own before including them from a widely used header; a small utility can carry a large
   include tree.
-
-  :Name: ``include-include-what-you-use``
 
 - .. rule:: include-pimpl
   .. rule:: I7
 
   :ruleid:`I7` :judgment:`judgment`
   **Pimpl at high-level entities** (heuristics, state repositories, executors) **and at a repository whose stores its
-  includers do not need.** A formalism repository (yggdrasil's ``Repository``) declares its members in its header and
+  includers do not need.**
+
+  :Name: ``include-pimpl``
+
+  A formalism repository (yggdrasil's ``Repository``) declares its members in its header and
   keeps its stores behind a pointer to its implementation, which one source per library instantiates
   (``yggdrasil/formalism/repository_instantiations.hpp``): a file that reads records through it completes none of its
   stores. Each read becomes a call; in tyr that costs 1-3% of search time, with the same results, and saves 16% of the
@@ -99,4 +115,3 @@ Headers
   reaches into one completes it. Never in views,
   interning or evaluation, whose code is the hot loop itself.
 
-  :Name: ``include-pimpl``

@@ -156,13 +156,20 @@ class Finding:
 
 
 def tracked(repository: Path) -> list[str]:
-    """The files git tracks in `repository`, relative to its root."""
+    """The files git tracks in `repository` that are there, relative to its root.
+
+    A tracked file deleted from the working tree, its deletion not yet committed, is not one of its files.
+    """
     git = shutil.which("git")
     if git is None:
         msg = "pybrokkr.rules.layout.files needs git on PATH"
         raise FileNotFoundError(msg)
     listed = subprocess.run([git, "-C", str(repository), "ls-files"], capture_output=True, text=True, check=True)
-    return listed.stdout.splitlines()
+    deleted = subprocess.run(
+        [git, "-C", str(repository), "ls-files", "--deleted"], capture_output=True, text=True, check=True
+    )
+    gone = set(deleted.stdout.splitlines())
+    return [each for each in listed.stdout.splitlines() if each not in gone]
 
 
 def libraries(files: list[str]) -> list[str]:
@@ -327,12 +334,12 @@ def unincluded(repository: Path, files: list[str], lib: str | None) -> list[Find
 # repository, its tracked files and its library (None for a Python package).
 Check = Callable[[Path, list[str], str | None], list[Finding]]
 RULES: dict[str, tuple[str, Check]] = {
-    "L1": ("layout-allowed-files", lambda _, files, lib: unidentified(files) + unmatched(files, lib)),
-    "L2": ("layout-required-files", lambda _, files, lib: missing(files, lib)),
-    "L3": ("layout-mirroring", lambda _, files, lib: unmirrored(files, lib)),
-    "L4": ("layout-stub-packages", lambda _, files, __: unpackaged(files)),
-    "L5": ("layout-unit-test-component", unreferencing),
-    "L6": ("layout-header-included", unincluded),
+    "L1.1": ("layout-allowed-files", lambda _, files, lib: unidentified(files) + unmatched(files, lib)),
+    "L1.2": ("layout-required-files", lambda _, files, lib: missing(files, lib)),
+    "L1.3": ("layout-mirroring", lambda _, files, lib: unmirrored(files, lib)),
+    "L1.4": ("layout-stub-packages", lambda _, files, __: unpackaged(files)),
+    "L1.5": ("layout-unit-test-component", unreferencing),
+    "L1.6": ("layout-header-included", unincluded),
 }
 
 

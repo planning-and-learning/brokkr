@@ -15,7 +15,11 @@ Instantiation
   .. rule:: T1
 
   :ruleid:`T1` :measured:`measured`
-  **Explicitly instantiate when the same instantiation is repeated in many TUs and the declaration is cheap.** Define
+  **Explicitly instantiate when the same instantiation is repeated in many TUs and the declaration is cheap.**
+
+  :Name: ``template-explicit-instantiation``
+
+  Define
   the members out of class: members defined in the class body are implicitly inline and GCC still instantiates them in
   every TU that uses them, despite ``extern template``. This includes the constructors and the destructor: declare
   them in the class and define them out of class (``~T();`` and ``template<...> T<...>::~T() = default;``), or every
@@ -23,13 +27,15 @@ Instantiation
   (``template class T<...>;``), not only its out-of-class members: under ``extern template``, GCC also calls inline
   members it does not inline, so the library must provide them too.
 
-  :Name: ``template-explicit-instantiation``
-
 - .. rule:: template-hidden-definitions
   .. rule:: T2
 
   :ruleid:`T2` :judgment:`judgment`
-  **Prefer hiding definitions over** ``extern template``. Put the definitions in ``detail/<name>_impl.hpp``, include
+  **Prefer hiding definitions over** ``extern template``.
+
+  :Name: ``template-hidden-definitions``
+
+  Put the definitions in ``detail/<name>_impl.hpp``, include
   it only from the instantiating sources (and under ``<PROJECT>_HEADER_INSTANTIATION``), and instantiate in the
   library. Users then only link. Headers that the definitions need include the declarations as ``<name>_decl.hpp``,
   and only the public ``<name>.hpp`` adds the definitions under ``<PROJECT>_HEADER_INSTANTIATION``, so that build mode
@@ -38,13 +44,15 @@ Instantiation
   than they save. Compile a shared library with ``-fno-semantic-interposition`` (GCC): otherwise calls between its own
   exported functions go through the PLT and are not inlined, so small hot functions moved out of headers become calls.
 
-  :Name: ``template-hidden-definitions``
-
 - .. rule:: template-opt-in-extern-lists
   .. rule:: T3
 
   :ruleid:`T3` :measured:`measured`
-  **Make extern lists opt-in when the definitions must stay visible.** Put ``extern template`` declarations for widely
+  **Make extern lists opt-in when the definitions must stay visible.**
+
+  :Name: ``template-opt-in-extern-lists``
+
+  Put ``extern template`` declarations for widely
   shared instantiations (such as the symbol storage of every symbol type) in a separate
   ``detail/<name>_instantiations.hpp`` that only the TUs doing that work include, e.g. parsers and translators that
   intern every type. Including such a list everywhere costs every light TU the class instantiations.
@@ -61,8 +69,6 @@ Instantiation
   explicit instantiations that nothing inside the dylib calls, so a library whose includers call members it never
   calls itself builds without LTO on macOS.
 
-  :Name: ``template-opt-in-extern-lists``
-
 - .. rule:: template-no-deduced-returns
   .. rule:: T4
 
@@ -77,7 +83,11 @@ Instantiation
 
   :ruleid:`T5` :measured:`measured`
   **Split instantiating sources only along the dimension that drives their cost** (family, task kind, context or
-  constructor category) so no single TU dominates, even if the summed memory grows by the repeated includes. Test a
+  constructor category) so no single TU dominates, even if the summed memory grows by the repeated includes.
+
+  :Name: ``template-split-by-cost``
+
+  Test a
   dimension by compiling the parts merged: if the merged source costs about as much as one part, the parts share their
   instantiations and the split only compiles them twice, so merge them as long as the merged source stays below the
   heaviest TU of the build. Tests split the same way: shared fixtures go to a ``<test>_fixtures.hpp`` header, and the
@@ -98,60 +108,70 @@ Instantiation
   other targets fill the free slots, so the peak drops at about the same wall time. The cap depends on the machine,
   so ``<n>`` is a cache variable set at configuration time, empty (no cap) by default.
 
-  :Name: ``template-split-by-cost``
-
 - .. rule:: template-one-container
   .. rule:: T6
 
   :ruleid:`T6` :judgment:`judgment`
-  **One container for many record types.** Memo tables, visited sets and caches keyed by records of every type in a
-  type list use one container keyed by (type position, index) instead of a tuple with one container per type: each
-  container type instantiates its whole hash table. The key carries no dispatch; views are rebuilt from the index.
+  **One container for many record types.**
 
   :Name: ``template-one-container``
+
+  Memo tables, visited sets and caches keyed by records of every type in a
+  type list use one container keyed by (type position, index) instead of a tuple with one container per type: each
+  container type instantiates its whole hash table. The key carries no dispatch; views are rebuilt from the index.
 
 - .. rule:: template-no-all-types-constraints
   .. rule:: T7
 
   :ruleid:`T7` :decidable:`decidable`
-  **No all-types invocability constraints on internal visitors over long type lists.** ``InvocableWithEach<F, List>``
+  **No all-types invocability constraints on internal visitors over long type lists.**
+
+  :Name: ``template-no-all-types-constraints``
+
+  ``InvocableWithEach<F, List>``
   (or ``std::invocable<F, T>`` for each ``T``) on a generic lambda instantiates the lambda body for every type in the
   list, at every instantiation of the constrained function: a recursive visitor over N record types costs N x N body
   instantiations although each node visits only its few children. Constrain the public entry point if a diagnostic is
   wanted; leave internal helpers that only forward the visitor unconstrained.
 
-  :Name: ``template-no-all-types-constraints``
-
 - .. rule:: template-own-dispatch-first
   .. rule:: T8
 
   :ruleid:`T8` :judgment:`judgment`
-  **Dispatch your own types before a generic library's trait-based dispatch.** ``boost::json::value_from`` computes
+  **Dispatch your own types before a generic library's trait-based dispatch.**
+
+  :Name: ``template-own-dispatch-first``
+
+  ``boost::json::value_from`` computes
   every conversion category (user, native, generic: sequence, map, tuple, optional, described class) of every nested
   type it converts, even when a ``tag_invoke`` overload matches. For types the library describes itself (yggdrasil's
   ``describe_fields``), and ranges and optionals of them, convert directly and hand only leaf types to the generic
   library. Types serialized as another object declare ``serialize_as(Dictionaries&, const T&)`` instead of a competing
   ``tag_invoke``.
 
-  :Name: ``template-own-dispatch-first``
-
 - .. rule:: template-contracts-at-instantiation
   .. rule:: T9
 
   :ruleid:`T9` :judgment:`judgment`
-  **Check compile-time contracts where the instantiation already exists.** A ``static_assert`` over overload
+  **Check compile-time contracts where the instantiation already exists.**
+
+  :Name: ``template-contracts-at-instantiation``
+
+  A ``static_assert`` over overload
   resolution against a heavy class (``InternsData``, ``rejects_symbol`` on a repository) instantiates that class. In a
   test that checks many repositories it re-instantiates all of them; in the library source that explicitly
   instantiates the repository it costs almost nothing. Put such contracts next to the explicit instantiation, with the
   shared contract concepts in a ``detail`` header; tests keep the contracts on light types.
 
-  :Name: ``template-contracts-at-instantiation``
-
 - .. rule:: template-no-forwarding-parameters
   .. rule:: T10
 
   :ruleid:`T10` :judgment:`judgment`
-  **Template on what the code depends on, not on what it passes along.** A parameter that only forwards to other
+  **Template on what the code depends on, not on what it passes along.**
+
+  :Name: ``template-no-forwarding-parameters``
+
+  A parameter that only forwards to other
   templates multiplies every instantiation by its values and keeps the code out of the library. When the data is
   uniform (encoded bytes, indices) and only typed access needs the type, give the type its own identity (a constant of
   its codec or traits, not its position in a list) and keep the type list at the edges that turn a runtime type back
@@ -162,13 +182,15 @@ Instantiation
   parameter such as the repository type, or a library definition), and a recursive structure must define a type
   before the members that hold it by value.
 
-  :Name: ``template-no-forwarding-parameters``
-
 - .. rule:: template-read-write-split
   .. rule:: T11
 
   :ruleid:`T11` :measured:`measured`
-  **Split storage templates into a read header and a write impl.** When the write path of a widely included storage
+  **Split storage templates into a read header and a write impl.**
+
+  :Name: ``template-read-write-split``
+
+  When the write path of a widely included storage
   template (insertion, serialization) needs a dependency its read path does not, keep the class and the read API
   (``at``, ``operator[]``, ``size``, iteration, views) in ``<name>.hpp`` and define the whole write API (``insert*``,
   ``create*``, ``complete_miss*``, ``append*``, ``serialize``) in ``detail/<name>_impl.hpp``. Split along this
@@ -187,13 +209,15 @@ Instantiation
   value. Define these members out of class: functions defined in the class body are implicitly inline, and an extern
   template declaration does not stop their instantiation in the includer.
 
-  :Name: ``template-read-write-split``
-
 - .. rule:: template-no-tuple-per-type
   .. rule:: T12
 
   :ruleid:`T12` :judgment:`judgment`
-  **Keep** ``std::tuple`` **and** ``std::unique_ptr`` **out of per-type code.** A ``std::tuple`` of N types
+  **Keep** ``std::tuple`` **and** ``std::unique_ptr`` **out of per-type code.**
+
+  :Name: ``template-no-tuple-per-type``
+
+  A ``std::tuple`` of N types
   instantiates N levels of ``_Tuple_impl`` and the constraint traits of its constructors, and ``std::unique_ptr``
   stores its pointer in a ``std::tuple``. In code instantiated for every record type or over long type lists, hold an
   owned object by raw pointer and keep the ownership in the out-of-class special members
@@ -206,51 +230,59 @@ Instantiation
   and ``std::apply``. A ``cista_members()`` that returns ``std::tie`` in a non-template record compiles in every
   includer. Find such costs with clang's ``-ftime-trace`` over the heaviest TUs, summed by template name.
 
-  :Name: ``template-no-tuple-per-type``
-
 - .. rule:: template-compute-per-value
   .. rule:: T13
 
   :ruleid:`T13` :judgment:`judgment`
-  **Compute once per value what depends on a value only.** A constant computed per template (a variable template, a
+  **Compute once per value what depends on a value only.**
+
+  :Name: ``template-compute-per-value``
+
+  A constant computed per template (a variable template, a
   static data member) is computed again for every template argument list, even where it depends on part of it only.
   Key it by that part, passed as a value: urd's choice of a container depends on the request's shape (what it
   requires, what its data is, what it holds), not on its element types, so ``serving_for<Kind, Shape>`` scans the
   kind's table once per shape, and every Store of that shape reuses the scan (74 shapes among 832 Stores in two
   pyrunir TUs). The value must be structural, as urd's ``property_set`` is.
 
-  :Name: ``template-compute-per-value``
-
 - .. rule:: template-expand-packs
   .. rule:: T14
 
   :ruleid:`T14` :decidable:`decidable`
-  **Expand a pack instead of recursing over it.** A recursion over a list is one class instantiation per step, each
+  **Expand a pack instead of recursing over it.**
+
+  :Name: ``template-expand-packs``
+
+  A recursion over a list is one class instantiation per step, each
   carrying every argument of the recursion; where one is a large value (a ``property_set`` of 64 tags), naming and
   comparing it costs more than the step's work. urd's spec of a request takes the answer of each category of its
   kind's format in one expansion (``answers_of<Meant>(format)``: an ``mp_append`` of each category's answer, or of
   nothing), not in a recursion of one step per category for every Store.
 
-  :Name: ``template-expand-packs``
-
 - .. rule:: template-variant-by-index
   .. rule:: T15
 
   :ruleid:`T15` :decidable:`decidable`
-  **Build a** ``std::variant`` **by its index.** Its converting constructor resolves an overload set over all
+  **Build a** ``std::variant`` **by its index.**
+
+  :Name: ``template-variant-by-index``
+
+  Its converting constructor resolves an overload set over all
   alternatives (``_Build_FUNs``) for every type it is called with, so building each alternative of an N-way variant
   from a value resolves N sets of N. ``std::in_place_index<I>`` names the alternative instead. libstdc++ still builds
   alternative I through I nested unions (``_Variadic_union``), about N²/2 instantiations for a variant whose every
   alternative is built; a variant of many alternatives that is built often (a record's variant of child views) is a
   cost of its own, which only a type of fewer alternatives, or none, removes.
 
-  :Name: ``template-variant-by-index``
-
 - .. rule:: template-recursion-at-any-kind
   .. rule:: T16
 
   :ruleid:`T16` :judgment:`judgment`
-  **Define a recursion over every record kind once, at the records of any kind.** A visitor that recurses through a
+  **Define a recursion over every record kind once, at the records of any kind.**
+
+  :Name: ``template-recursion-at-any-kind``
+
+  A visitor that recurses through a
   record's children (an optimizer, a measure, a statistics collector) instantiates, from any one record, the closure
   of every kind below it; defined in a header, it makes every includer that calls it on one record compile all of
   them. Declare it in the header for the records of any kind, the variants that children are held as (a constructor
@@ -260,13 +292,15 @@ Instantiation
   ends, before the specializations are declared (ill-formed; clang rejects it, GCC does not). An inline non-template
   function in a header costs the same: every includer instantiates what it calls, whether or not it calls it.
 
-  :Name: ``template-recursion-at-any-kind``
-
 - .. rule:: template-name-by-contents
   .. rule:: T17
 
   :ruleid:`T17` :judgment:`judgment`
-  **Name a class whose definition is hidden by what it holds, not by its implementation.** Argument-dependent lookup
+  **Name a class whose definition is hidden by what it holds, not by its implementation.**
+
+  :Name: ``template-name-by-contents``
+
+  Argument-dependent lookup
   of an unqualified call completes the class templates among the template arguments of its arguments' types, to find
   their friends. A pimpl class ``Repository<ConcurrentSymbolRepository<Ts...>, ...>`` therefore completes its stores
   in every file that passes one to an unqualified call: in tyr, one such call instantiated the 55 stores of a symbol
@@ -276,8 +310,6 @@ Instantiation
   peak memory of a full build. The same holds for any template argument that is costly to complete: a qualified call
   (``detail::played_roles(...)``) avoids the lookup where the type cannot change.
 
-  :Name: ``template-name-by-contents``
-
 Process
 -------
 
@@ -285,7 +317,11 @@ Process
   .. rule:: T18
 
   :ruleid:`T18` :process:`process`
-  **Measure before and after.** Use the standalone cost of a header (``-fsyntax-only`` of a TU that only includes it),
+  **Measure before and after.**
+
+  :Name: ``template-measure``
+
+  Use the standalone cost of a header (``-fsyntax-only`` of a TU that only includes it),
   the cost of a single API call (the TU's includes plus that call, at ``-fsyntax-only`` and at ``-O3``), and a full
   instrumented build logging the max RSS per TU. GCC's peak RSS also depends on when its garbage collector runs, which
   moves single TUs by up to about 200 MB without any change in live memory; check a surprising rise with
@@ -302,16 +338,16 @@ Process
   list that declares it (:rule:`T3`); an extern list declared before its use keeps it out
   (an undefined symbol instead).
 
-  :Name: ``template-measure``
-
 - .. rule:: template-keep-what-wins
   .. rule:: T19
 
   :ruleid:`T19` :process:`process`
-  **Keep only what wins in the full build.** A smaller standalone header often does not shrink its includers, which
-  may instantiate the same code anyway. Revert changes that do not lower the max or summed memory of the affected TUs.
+  **Keep only what wins in the full build.**
 
   :Name: ``template-keep-what-wins``
+
+  A smaller standalone header often does not shrink its includers, which
+  may instantiate the same code anyway. Revert changes that do not lower the max or summed memory of the affected TUs.
 
 Examples
 --------

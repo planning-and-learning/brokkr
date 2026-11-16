@@ -13,7 +13,7 @@ pytest.importorskip("clang.cindex")
 if shutil.which("clang++") is None:
     pytest.skip("needs clang++ for clang's own headers", allow_module_level=True)
 
-from pybrokkr.rules.schema.records import Record, binds, check
+from pybrokkr.rules.schema.records import Record, binds, check, forwarding
 
 # Just enough of urd for the headers below to parse.
 URD = """#pragma once
@@ -325,6 +325,147 @@ def test_a_record_without_fields_has_only_its_default_constructor(tmp_path: Path
     assert not [each for each in found if "constructors" in each]
 
 
+# One tag, two shapes: records told apart only by the concept their Tag satisfies, each with the mixin of its shape.
+SHAPES = """#pragma once
+#include "lib/declarations.hpp"
+#include <concepts>
+#include <cstdint>
+#include <urd/elements/flat.hpp>
+namespace lib {
+struct UnaryTag {};
+struct BinaryTag {};
+template<typename T> concept Unary = std::same_as<T, UnaryTag>;
+template<typename T> concept Binary = std::same_as<T, BinaryTag>;
+template<typename Tag> struct Shape {};
+}
+namespace urd {
+template<lib::Unary Tag> struct data<lib::Shape<Tag>> {
+    urd::index<lib::Shape<Tag>> index;
+    std::uint32_t operand;
+    data() = default;
+    explicit data(std::uint32_t operand_) : index(), operand(operand_) {}
+    data(const data& other) = delete;
+    data& operator=(const data& other) = delete;
+    data(data&& other) = default;
+    data& operator=(data&& other) = default;
+    ~data() = default;
+    static constexpr auto fields() noexcept { return urd::Fields<urd::field<"operand", &data::operand>> {}; }
+    static constexpr auto identifying_members() noexcept { return urd::Members<&data::operand> {}; }
+    static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::operand> {}; }
+};
+template<lib::Binary Tag> struct data<lib::Shape<Tag>> {
+    urd::index<lib::Shape<Tag>> index;
+    std::uint32_t left_operand;
+    std::uint32_t right_operand;
+    data() = default;
+    data(std::uint32_t left_operand_, std::uint32_t right_operand_) :
+        index(), left_operand(left_operand_), right_operand(right_operand_) {}
+    data(const data& other) = delete;
+    data& operator=(const data& other) = delete;
+    data(data&& other) = default;
+    data& operator=(data&& other) = default;
+    ~data() = default;
+    static constexpr auto fields() noexcept
+    { return urd::Fields<urd::field<"left_operand", &data::left_operand>,
+                         urd::field<"right_operand", &data::right_operand>> {}; }
+    static constexpr auto identifying_members() noexcept
+    { return urd::Members<&data::left_operand, &data::right_operand> {}; }
+    static constexpr auto cista_members() noexcept
+    { return urd::Members<&data::index, &data::left_operand, &data::right_operand> {}; }
+};
+template<lib::Unary Tag, typename V> struct view_mixin<lib::Shape<Tag>, V> {
+private:
+    const V& self() const noexcept { return static_cast<const V&>(*this); }
+public:
+    auto get_operand() const noexcept { return self().template member<&urd::record_of<V>::operand>(); }
+};
+template<lib::Binary Tag, typename V> struct view_mixin<lib::Shape<Tag>, V> {
+private:
+    const V& self() const noexcept { return static_cast<const V&>(*this); }
+public:
+    auto get_left_operand() const noexcept { return self().template member<&urd::record_of<V>::left_operand>(); }
+    auto get_right_operand() const noexcept { return self().template member<&urd::record_of<V>::right_operand>(); }
+};
+}
+"""
+
+
+def test_records_of_one_tag_are_paired_with_the_mixin_of_their_shape(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    (root / "include/lib/shape_data.hpp").write_text(SHAPES)
+    git = shutil.which("git")
+    assert git is not None
+    subprocess.run([git, "-C", str(root), "add", "."], check=True)
+    found = check(root, database)
+    assert not [each for rule in ("S1", "S2") for each in found[rule] if "shape_data" in each.path]
+
+
+# One name in two namespaces: each record is paired with the mixin of its own namespace.
+NAMESAKES = (
+    """#pragma once
+#include "lib/declarations.hpp"
+#include <cstdint>
+#include <urd/elements/flat.hpp>
+namespace lib::first { struct Thing {}; }
+namespace lib::second { struct Thing {}; }
+namespace urd {
+"""
+    + """template<> struct data<lib::{ns}::Thing> {{
+    urd::index<lib::{ns}::Thing> index;
+    std::uint32_t {field};
+    data() = default;
+    explicit data(std::uint32_t {field}_) : index(), {field}({field}_) {{}}
+    data(const data& other) = delete;
+    data& operator=(const data& other) = delete;
+    data(data&& other) = default;
+    data& operator=(data&& other) = default;
+    ~data() = default;
+    static constexpr auto fields() noexcept {{ return urd::Fields<urd::field<"{field}", &data::{field}>> {{}}; }}
+    static constexpr auto identifying_members() noexcept {{ return urd::Members<&data::{field}> {{}}; }}
+    static constexpr auto cista_members() noexcept {{ return urd::Members<&data::index, &data::{field}> {{}}; }}
+}};
+template<typename V> struct view_mixin<lib::{ns}::Thing, V> {{
+private:
+    const V& self() const noexcept {{ return static_cast<const V&>(*this); }}
+public:
+    auto get_{field}() const noexcept {{ return self().template member<&urd::record_of<V>::{field}>(); }}
+}};
+""".format(ns="first", field="weight")
+    + """template<> struct data<lib::{ns}::Thing> {{
+    urd::index<lib::{ns}::Thing> index;
+    std::uint32_t {field};
+    data() = default;
+    explicit data(std::uint32_t {field}_) : index(), {field}({field}_) {{}}
+    data(const data& other) = delete;
+    data& operator=(const data& other) = delete;
+    data(data&& other) = default;
+    data& operator=(data&& other) = default;
+    ~data() = default;
+    static constexpr auto fields() noexcept {{ return urd::Fields<urd::field<"{field}", &data::{field}>> {{}}; }}
+    static constexpr auto identifying_members() noexcept {{ return urd::Members<&data::{field}> {{}}; }}
+    static constexpr auto cista_members() noexcept {{ return urd::Members<&data::index, &data::{field}> {{}}; }}
+}};
+template<typename V> struct view_mixin<lib::{ns}::Thing, V> {{
+private:
+    const V& self() const noexcept {{ return static_cast<const V&>(*this); }}
+public:
+    auto get_{field}() const noexcept {{ return self().template member<&urd::record_of<V>::{field}>(); }}
+}};
+""".format(ns="second", field="name")
+    + "}\n"
+)
+
+
+def test_records_of_one_name_in_two_namespaces_are_paired_with_their_own_mixins(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    (root / "include/lib/namesake_data.hpp").write_text(NAMESAKES)
+    git = shutil.which("git")
+    assert git is not None
+    subprocess.run([git, "-C", str(root), "add", "."], check=True)
+    found = check(root, database)
+    assert not [each for rule in ("S1", "S2") for each in found[rule] if "namesake_data" in each.path]
+
+
 def test_a_view_may_derive_more_but_not_read_data(tmp_path: Path) -> None:
     found = check(*library(tmp_path))["S2"]
     assert not [each for each in found if "atom_data" in each.path]
@@ -416,3 +557,21 @@ def test_a_family_is_bound_by_a_member() -> None:
     assert binds(family, "Relation<Schema>")
     assert not binds(family, "Row<Schema>")
     assert binds(Record("Atom", [], 0), "Atom")
+
+
+@pytest.mark.parametrize(
+    ("name", "body", "forwards"),
+    [
+        ("get_name", "return get_symbol ( ) . get_name ( ) ;", True),
+        ("get_state_repository", "return self ( ) . context ( ) ;", True),
+        ("get_task", "return * self ( ) . context ( ) . get_task ( ) ;", True),
+        ("get_entry_module", "return get_module ( ) ;", True),
+        ("get_predicate", "return get_row ( ) . get_relation ( ) ;", False),
+        ("get_arity", "return get_terms ( ) . size ( ) ;", False),
+        ("get_terms", "return self ( ) . template member < & urd :: record_of < V > :: terms > ( ) ;", False),
+    ],
+)
+def test_forwarding(name: str, body: str, forwards: bool) -> None:
+    """A member that only forwards (its name at the chain's end, or one call on the view) is S2's; others are not."""
+    words = ["auto", name, "(", ")", "const", "{", *body.split(), "}"]
+    assert bool(forwarding(name, words)) == forwards
