@@ -36,7 +36,8 @@ the same (``urd::borrowed_view<T, C, Value>``).
      compiler checks it where interning writes it), a value held in other records (a fact of a state) has none;
   #. the fields, data members of any type: whether a type can be stored as bytes, the compiler checks where urd stores
      the record (cista serializes each member);
-  #. ``data() = default;`` and one constructor that takes the fields in order and leaves ``index`` empty;
+  #. ``data() = default;`` and one constructor that takes the fields in order and leaves ``index`` empty (a record
+     without fields has ``data() = default;`` alone);
   #. either the copy deleted, the move and the destructor defaulted, the five as in the example: a copy that would cost
      the record's size is a compile error; or, for a record that is trivially copyable (indices and numbers, no memory
      of its own), its declaration that it is copied, which the compiler checks:
@@ -54,9 +55,10 @@ the same (``urd::borrowed_view<T, C, Value>``).
      copies it), or takes it over from ``T&&``; a copy of a move-only record is built from its fields;
   #. ``fields()``, which names each field once, under its member's name: ``urd::Fields<urd::field<"<member>",
      &data::<member>>...>``;
-  #. ``identifying_members()``, which returns the fields that make the record what it is, as ``urd::Members`` of some
-     of them (``urd::members_of(fields())`` for all): which ones is the record's semantics, not its schema (a query's
-     plan is stored but does not identify it);
+  #. ``identifying_members()``, which returns the members that make the record what it is, as ``urd::Members`` of some
+     of its fields and its index, where it has one (``urd::members_of(fields())`` for all fields): which ones is the
+     record's semantics, not its schema (a query's plan is stored but does not identify it; a registered state is its
+     index, as its repository has deduplicated it by its contents);
   #. ``cista_members()``, which returns ``urd::Members<&data::index, &data::<member>...>``, the index (where it has
      one) and the fields in their order.
 
@@ -204,4 +206,5 @@ Status
 ``python -m pybrokkr.rules S`` checks the three rules: S1 and S2 on every tracked header and source that defines a
 ``urd::data`` or ``urd::view_mixin`` specialization, tests included, S3 on the binding sources under ``python/src``,
 each file parsed by libclang (a header as a translation unit that includes it alone, a source with its own compile
-command); what it reports is where a library does not follow them yet.
+command, or that of the unity source that includes it); what it reports is where a library does not follow them yet. A
+file that does not parse, or a source with no compile command, is a finding, not a skip: what it holds is not known.

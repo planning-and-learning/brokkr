@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """One command for every rule a check decides, whichever module checks it.
 
-    python -m pybrokkr.rules <rule>... [-C <repository>] [--sources <file>]
+    python -m pybrokkr.rules <rule>... [-C <repository>] [--sources <file>] [--compile-commands <file>] [-j <jobs>]
 
 A rule is selected by its ID (``L1``), its name (``layout-allowed-files``), the letter of its page (``L``: every rule
 of the page that has a check), its class (``decidable``) or ``all``. A rule that needs the configured build (L7) reads
@@ -13,6 +13,7 @@ a page, a class or ``all`` is reported as not checked. Reports each finding as
 """
 
 import argparse
+import os
 import re
 import sys
 from collections.abc import Callable
@@ -30,6 +31,7 @@ class Inputs:
 
     sources: set[Path]
     compile_commands: Path | None
+    jobs: int
 
 
 @dataclass(frozen=True)
@@ -51,7 +53,7 @@ def _schema_rule(rule: str) -> Callable[[Path, Inputs], list[files.Finding]]:
         if inputs.compile_commands is None:
             message = f"{rule} needs a compile database"
             raise ValueError(message)
-        return records.check(repository.resolve(), inputs.compile_commands.resolve())[rule]
+        return records.check(repository.resolve(), inputs.compile_commands.resolve(), inputs.jobs)[rule]
 
     return run
 
@@ -101,6 +103,9 @@ def main() -> int:
     parser.add_argument("-C", dest="repository", type=Path, default=Path(), help="the repository (default: here)")
     parser.add_argument("--sources", type=Path, help="the targets' sources (default: build/brokkr/sources.txt)")
     parser.add_argument("--compile-commands", type=Path, help="the compile database (default: under build/)")
+    parser.add_argument(
+        "-j", "--jobs", type=int, default=os.cpu_count() or 1, help="files parsed at once (default: the number of cores)"
+    )
     arguments = parser.parse_args()
     try:
         rules = selected(arguments.rules)
@@ -123,6 +128,7 @@ def main() -> int:
     inputs = Inputs(
         {Path(line).resolve() for line in sources.read_text().splitlines() if line} if sources else set[Path](),
         paths["compile commands"],
+        arguments.jobs,
     )
     count = 0
     for rule in rules:

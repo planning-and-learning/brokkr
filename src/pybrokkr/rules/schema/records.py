@@ -11,9 +11,12 @@ that does not parse is a finding, not a skip: what it holds is not known.
 
 import functools
 import json
+import os
 import re
 from collections.abc import Iterator
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from itertools import repeat
 from pathlib import Path
 
 import clang.cindex as ci
@@ -103,6 +106,14 @@ def declared_in(cursor: ci.Cursor, header: Path) -> bool:
     return cursor.location.file is not None and Path(cursor.location.file.name) == header
 
 
+def own_nodes(unit: ci.TranslationUnit, path: Path) -> Iterator[ci.Cursor]:
+    """The nodes of the source `path` (parsed: `unit`) in preorder: the subtrees of its own top-level declarations, not
+    those of the headers it includes, which are never walked."""
+    for child in unit.cursor.get_children():
+        if declared_in(child, path):
+            yield from child.walk_preorder()
+
+
 def top_level(cursor: ci.Cursor, header: Path) -> Iterator[ci.Cursor]:
     """The declarations of `header` at namespace scope, through its namespaces."""
     for child in cursor.get_children():
@@ -178,10 +189,12 @@ def list_findings(methods: list[ci.Cursor], names: list[str], *, indexed: bool) 
         if listed != names or members_named(bodies["fields"]) != names:
             found.append(f"fields() names {listed}, not the fields {names} under their names")
     if "identifying_members" in bodies and "members_of ( fields ( ) )" not in " ".join(bodies["identifying_members"]):
-        # Which fields identify the record is its semantics; that they are fields is its schema.
+        # Which members identify the record is its semantics (its index, where a registered record is its index); that
+        # they are its members is its schema.
         named = members_named(bodies["identifying_members"])
-        if not named or not set(named) <= set(names):
-            found.append(f"identifying_members() names {named}, not some of the fields {names}")
+        members = ["index", *names] if indexed else names
+        if not named or not set(named) <= set(members):
+            found.append(f"identifying_members() names {named}, not some of the members {members}")
     stored = ["index", *names] if indexed else names
     if "cista_members" in bodies and members_named(bodies["cista_members"]) != stored:
         found.append(f"cista_members() names {members_named(bodies['cista_members'])}, not {stored}")
@@ -219,7 +232,8 @@ def record_findings(cursor: ci.Cursor) -> tuple[Record, list[str]]:
         say.append("declares a field after a constructor")
     shapes = sorted(len(list(each.get_arguments())) for each in constructors)
     defaulted = any(each.is_default_constructor() and each.is_default_method() for each in constructors)
-    if shapes != [0, len(names)] or not defaulted:
+    # Without fields, data() = default is the one from the fields.
+    if shapes != sorted({0, len(names)}) or not defaulted:
         say.append(f"has {len(constructors)} constructors, not data() = default and one from the {len(names)} fields")
     copyable = [each for each in methods if each.spelling == "copyable"]
     methods = [each for each in methods if each.spelling != "copyable"]
@@ -287,17 +301,39 @@ class Database:
     default: list[str]
     resource: str
 
+    def unit(self, path: Path) -> tuple[ci.TranslationUnit | None, str]:
+        """`path` parsed: a header with the first source's flags, a source with its own; a source that has none is not
+        parsed (no other source's flags stand in for its own), and what is wrong is the error."""
+        if path.suffix != ".cpp":
+            return parse(path, self.default, self.resource)
+        if path not in self.flags:
+            return None, "not in the compile database, nor included by a source that is"
+        return parse(path, self.flags[path], self.resource)
+
+
+UNITY_INCLUDE = re.compile(r'^\s*#\s*include\s+"([^"]+\.(?:cpp|cxx|cc))"', re.MULTILINE)
+
 
 def database(repository: Path, compile_commands: Path) -> Database:
     """The compile database's flags of the sources under `repository`, made absolute; clang's resource directory."""
     root = repository.resolve()
     relative = re.compile(r"^(-I|-isystem|-iquote)(?=[^/])")
     flags: dict[Path, list[str]] = {}
+    included: dict[Path, list[str]] = {}
     for entry in json.loads(compile_commands.read_text()):
         directory = Path(entry["directory"])
         source = (directory / entry["file"]).resolve()
+        own = [relative.sub(lambda m, d=directory: f"{m[1]}{d}/", each) for each in flags_of(entry)]
         if source.is_relative_to(root):
-            flags[source] = [relative.sub(lambda m, d=directory: f"{m[1]}{d}/", each) for each in flags_of(entry)]
+            flags[source] = own
+        # A unity build compiles its sources by including them (#include "<absolute path>.cpp"): each is parsed with the
+        # flags of the source that includes it.
+        if source.is_file():
+            for name in UNITY_INCLUDE.findall(source.read_text(errors="replace")):
+                if (member := (directory / name).resolve()).is_relative_to(root):
+                    included.setdefault(member, own)
+    for member, own in included.items():
+        flags.setdefault(member, own)
     if not flags:
         message = f"{compile_commands} has no compile command of a source under {repository}"
         raise ValueError(message)
@@ -334,58 +370,106 @@ def binds(record: Record, tag: str) -> bool:
     )
 
 
-def bound(repository: Path, file: str, data: Database) -> set[str]:
-    """The tags the binding source `file` binds with urd::python::bind_data, without namespaces.
+RECORD_CLASSES = {"urd::data", "urd::index_view", "urd::borrowed_view", "urd::owning_view", "urd::shared_view"}
+REFERENCES = {ci.CursorKind.TYPE_REF, ci.CursorKind.TEMPLATE_REF}
+ALIASES = {ci.CursorKind.TYPE_ALIAS_DECL, ci.CursorKind.TYPEDEF_DECL}
+CONSTRUCTIONS = {ci.CursorKind.VAR_DECL, ci.CursorKind.CALL_EXPR, ci.CursorKind.UNEXPOSED_EXPR}
 
-    Each is the call's first template argument, resolved: an alias names the record it stands for.
+
+def bound(unit: ci.TranslationUnit, path: Path) -> set[str]:
+    """The tags the binding source `path` (parsed: `unit`) binds with urd::python::bind_data, without namespaces.
+
+    Each is the call's first template argument, resolved (an alias names the record it stands for) and as written (a
+    record whose tag is an alias is named by it).
     """
-    path = (repository / file).resolve()
-    unit, _ = parse(path, data.flags.get(path, data.default), data.resource)
-    if unit is None:
-        return set()
     tags: set[str] = set()
-    for call in unit.cursor.walk_preorder():
+    for call in own_nodes(unit, path):
         if call.kind == ci.CursorKind.CALL_EXPR and call.spelling == "bind_data" and declared_in(call, path):
             function = call.referenced
             if function is not None and function.get_num_template_arguments() > 0:
                 spelled = function.get_template_argument_type(0).get_canonical().spelling
                 tags.add(re.sub(r"(?:\b\w+)?::", "", spelled).replace(" ", ""))
+                # The argument as written, where it is an alias: libclang hands out the argument's type desugared.
+                written = next((each for each in call.walk_preorder() if each.kind in REFERENCES), None)
+                if written is not None and written.referenced is not None and written.referenced.kind in ALIASES:
+                    tags.add(written.referenced.spelling)
     return tags
 
 
 BINDS = ("bind_data", "bind_view", "class_<")
 DEFINES = re.compile(r"struct\s+(?:::)?(?:urd::)?(?:data|view_mixin)<")
-HAND_DATA = re.compile(r"class_<\s*(?:::)?(?:urd::)?data<")
 VIEWS = ("urd::index_view<", "urd::borrowed_view<", "urd::owning_view<", "urd::shared_view<")
 
 
-def hand_bound(repository: Path, file: str, data: Database) -> list[tuple[int, str]]:
-    """The classes of a record's data or view that the binding source `file` defines itself: (line, record tag).
+def qualified(declaration: ci.Cursor) -> str:
+    """The name of `declaration` with its enclosing scopes: ``urd::data``."""
+    names: list[str] = []
+    current: ci.Cursor | None = declaration
+    while current is not None and current.kind != ci.CursorKind.TRANSLATION_UNIT:
+        if current.spelling:
+            names.append(current.spelling)
+        current = current.semantic_parent
+    return "::".join(reversed(names))
 
-    A class bind_data or bind_view defines is in urd's header, not in `file`, so only what the file writes by hand is
+
+def named(reference: ci.Cursor) -> str:
+    """The class or class template a type reference names, through aliases and alias templates: ``urd::data`` for V
+    of ``using V = urd::data<Tag>``; "" where it names none (a template parameter)."""
+    declaration: ci.Cursor | None = reference.referenced
+    while declaration is not None:
+        if declaration.kind == ci.CursorKind.TYPE_ALIAS_TEMPLATE_DECL:
+            children = declaration.get_children()
+            declaration = next((each for each in children if each.kind == ci.CursorKind.TYPE_ALIAS_DECL), None)
+        elif declaration.kind in {ci.CursorKind.TYPE_ALIAS_DECL, ci.CursorKind.TYPEDEF_DECL}:
+            written = next((each for each in declaration.walk_preorder() if each.kind in REFERENCES), None)
+            declaration = None if written is None else written.referenced
+        elif declaration.kind in {ci.CursorKind.CLASS_TEMPLATE, ci.CursorKind.CLASS_DECL, ci.CursorKind.STRUCT_DECL}:
+            return qualified(declaration)
+        else:
+            return ""
+    return ""
+
+
+def constructed(cursor: ci.Cursor) -> str:
+    """The class or class template the nanobind::class_ that `cursor` constructs binds (``named``); "" where it
+    constructs none."""
+    references = [each for each in cursor.walk_preorder() if each.kind in REFERENCES]
+    for position, each in enumerate(references[:-1]):
+        referenced = each.referenced
+        if each.kind == ci.CursorKind.TEMPLATE_REF and referenced and qualified(referenced) == "nanobind::class_":
+            return named(references[position + 1])
+    return ""
+
+
+def hand_bound(unit: ci.TranslationUnit, path: Path) -> list[tuple[int, str]]:
+    """The classes of a record's data or view that the binding source `path` (parsed: `unit`) defines itself: (line,
+    record tag).
+
+    A class bind_data or bind_view defines is in urd's header, not in `path`, so only what the file writes by hand is
     found.
     """
-    path = (repository / file).resolve()
-    unit, _ = parse(path, data.flags.get(path, data.default), data.resource)
-    if unit is None:
-        return []
     found: set[tuple[int, str]] = set()
-    for cursor in unit.cursor.walk_preorder():
-        if cursor.kind not in {ci.CursorKind.VAR_DECL, ci.CursorKind.CALL_EXPR} or not declared_in(cursor, path):
+    for cursor in own_nodes(unit, path):
+        if cursor.kind not in CONSTRUCTIONS or not declared_in(cursor, path):
             continue
-        # A class is bound where it is constructed (a variable, a call of its constructor); a .def on one is not, nor is
-        # a variable that holds the class bind_data or bind_view returned.
-        if cursor.kind == ci.CursorKind.CALL_EXPR and cursor.spelling != "class_":
+        # A class is bound where it is constructed (a variable, a call of its constructor, unnamed in a template); a
+        # .def on one is not, nor is a variable that holds the class bind_data or bind_view returned.
+        if cursor.kind == ci.CursorKind.CALL_EXPR and cursor.spelling not in {"class_", ""}:
             continue
         if cursor.kind == ci.CursorKind.VAR_DECL and any(
             each.kind == ci.CursorKind.CALL_EXPR and each.spelling in {"bind_data", "bind_view"} for each in cursor.walk_preorder()
         ):
             continue
         bound = cursor.type.get_canonical()
-        if "type-parameter" in bound.spelling:
-            # In a template the record is a parameter, and its type cannot be resolved: binding urd::data<...> by hand
-            # there is the finding itself.
-            if HAND_DATA.search(cursor.type.spelling):
+        dependent = "type-parameter" in bound.spelling or bound.spelling == "auto"
+        # Outside a template a class is constructed by a variable or a call of class_'s constructor; an unnamed
+        # expression of its type there is a class a call returned (bind_data's), not one constructed here.
+        if not dependent and (cursor.kind == ci.CursorKind.UNEXPOSED_EXPR or cursor.spelling == ""):
+            continue
+        if dependent:
+            # In a template the class depends on a parameter (or is an undeduced auto): its record is not known, but the
+            # template it names is, through aliases. A record's data or view bound by hand there is the finding itself.
+            if constructed(cursor) in RECORD_CLASSES:
                 found.add((cursor.location.line, "*"))
             continue
         if not bound.spelling.startswith("nanobind::class_<") or bound.get_num_template_arguments() < 1:
@@ -401,7 +485,7 @@ def hand_bound(repository: Path, file: str, data: Database) -> list[tuple[int, s
 def file_findings(repository: Path, file: str, data: Database) -> tuple[list[Record], list[Mixin], list[Finding]]:
     """The records and view mixins `file` defines, and what of its records S1 does not allow."""
     path = (repository / file).resolve()
-    unit, error = parse(path, data.flags.get(path, data.default), data.resource)
+    unit, error = data.unit(path)
     if unit is None:
         return [], [], [Finding(file, f"does not parse: {error}")]
     records: list[Record] = []
@@ -455,14 +539,11 @@ def derived_name(method: str, words: list[str]) -> str:
     return "get_" + "_".join(tag_name(tag) for tag in tags) + "_" + method.removeprefix("get_")
 
 
-def derived_findings(repository: Path, file: str, data: Database) -> list[Finding]:
-    """What S3 does not allow of the .def calls on the classes bind_data and bind_view return in source `file`."""
-    path = (repository / file).resolve()
-    unit, _ = parse(path, data.flags.get(path, data.default), data.resource)
-    if unit is None:
-        return []
+def derived_findings(unit: ci.TranslationUnit, path: Path, file: str) -> list[Finding]:
+    """What S3 does not allow of the .def calls on the classes bind_data and bind_view return in source `file` (its
+    path `path`, parsed: `unit`)."""
     found: list[Finding] = []
-    for call in unit.cursor.walk_preorder():
+    for call in own_nodes(unit, path):
         if call.kind != ci.CursorKind.CALL_EXPR or call.spelling != "def" or not declared_in(call, path):
             continue
         children = list(call.get_children())
@@ -492,13 +573,29 @@ def derived_findings(repository: Path, file: str, data: Database) -> list[Findin
     return found
 
 
+def binding_read(
+    repository: Path, file: str, data: Database
+) -> tuple[str, str | None, set[str], list[tuple[int, str]], list[Finding]]:
+    """The binding source `file` parsed, read and dropped: the tags it binds, its classes bound by hand, its derived
+    findings (S3); or why it does not parse, with nothing read. Only these are kept, never its tree, which holds
+    everything the source includes."""
+    path = (repository / file).resolve()
+    unit, error = data.unit(path)
+    if unit is None:
+        return file, error, set(), [], []
+    return file, None, bound(unit, path), hand_bound(unit, path), derived_findings(unit, path, file)
+
+
 @functools.cache
-def check(repository: Path, compile_commands: Path) -> dict[str, list[Finding]]:
+def check(repository: Path, compile_commands: Path, jobs: int = os.cpu_count() or 1) -> dict[str, list[Finding]]:
     """The findings of the record schemas in `repository`, by rule (S1, S2, S3).
 
     Every tracked header and source that defines a urd::data or urd::view_mixin specialization is parsed once (a header
     alone, a source with its own compile command); a record's view mixins are those of its tag, as T, data<T> or
-    builder<T>, wherever they are defined. A file that does not parse is an S1 finding.
+    builder<T>, wherever they are defined. A file that does not parse is a finding: of S1 where it defines records, of S3
+    where it binds them. A source is parsed with its own compile command, or with that of the unity source that includes
+    it; one that has neither is not parsed with another's. `jobs` files are parsed at once, each in a process of its own
+    that hands back what it read, in the files' order.
     """
     files = tracked(repository)
     data = database(repository, compile_commands)
@@ -509,16 +606,24 @@ def check(repository: Path, compile_commands: Path) -> dict[str, list[Finding]]:
         and each.endswith(".cpp")
         and any(word in (repository / each).read_text(errors="replace") for word in BINDS)
     ]
-    binding = {tag for each in sources for tag in bound(repository, each, data)}
+    defining = [
+        each
+        for each in files
+        if each.endswith((".hpp", ".cpp")) and DEFINES.search((repository / each).read_text(errors="replace"))
+    ]
+    # Each file parsed once, in a worker that keeps only what it read (a binding source: what it binds, what it binds by
+    # hand, its derived findings); one that does not parse is a finding, not a skip: what it binds is not known.
+    with ProcessPoolExecutor(max_workers=jobs) as pool:
+        read = list(pool.map(binding_read, repeat(repository), sources, repeat(data)))
+        defined = list(pool.map(file_findings, repeat(repository), defining, repeat(data)))
+    binding = {tag for _, _, tags, _, _ in read for tag in tags}
     records: list[Record] = []
     mixins: list[Mixin] = []
     found: dict[str, list[Finding]] = {"S1": [], "S2": [], "S3": []}
-    for each in files:
-        if each.endswith((".hpp", ".cpp")) and DEFINES.search((repository / each).read_text(errors="replace")):
-            more_records, more_mixins, findings = file_findings(repository, each, data)
-            records.extend(more_records)
-            mixins.extend(more_mixins)
-            found["S1"].extend(findings)
+    for more_records, more_mixins, findings in defined:
+        records.extend(more_records)
+        mixins.extend(more_mixins)
+        found["S1"].extend(findings)
     by_tag: dict[str, list[Mixin]] = {}
     for mixin in mixins:
         by_tag.setdefault(mixin.tag, []).append(mixin)
@@ -531,11 +636,14 @@ def check(repository: Path, compile_commands: Path) -> dict[str, list[Finding]]:
         # A library's records are bound; a test's own records are not.
         if record.file.startswith("include/") and not any(binds(record, tag) for tag in binding):
             found["S3"].append(Finding(where, f"{record.tag} is not bound with urd::python::bind_data"))
-    for each in sources:
+    for each, error, _, by_hand, derived in read:
+        if error is not None:
+            found["S3"].append(Finding(each, f"does not parse: {error}"))
+            continue
         found["S3"].extend(
             Finding(f"{each}:{line}", f"{tag}: its data or view is bound by hand, not by bind_data or bind_view")
-            for line, tag in hand_bound(repository, each, data)
+            for line, tag in by_hand
             if tag == "*" or any(binds(record, tag) for record in records)
         )
-        found["S3"].extend(derived_findings(repository, each, data))
+        found["S3"].extend(derived)
     return found

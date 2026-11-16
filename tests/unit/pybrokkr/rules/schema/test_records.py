@@ -33,10 +33,13 @@ template<typename... Fs> struct Fields {};
 template<typename... Fs> constexpr auto members_of(Fields<Fs...>) noexcept { return 0; }
 template<typename T, typename V> struct view_mixin {};
 template<typename V> using record_of = typename V::record;
+template<typename T, typename C> struct index_view {};
 }
 """
 DECLARATIONS = """#pragma once
 namespace lib { struct Atom {}; struct Cost {}; struct Loose {}; struct Term {}; struct Local {}; struct Predicate {}; }
+// A tag named by an alias of a family member, as tyr names its objects.
+namespace lib { template<typename T> struct Family {}; struct ObjectTag {}; using Object = Family<ObjectTag>; }
 """
 ATOM_DATA = """#pragma once
 #include "lib/declarations.hpp"
@@ -95,6 +98,28 @@ namespace lib { inline int helper() { return 0; } }
 """
 WEIGHT = "#pragma once\nnamespace lib { enum class Weight : int {}; }\n"
 # A copyable record: trivially copyable, it declares copyable() instead of the five.
+# A record whose tag is an alias: bound by bind_data of the alias.
+ALIAS_DATA = """#pragma once
+#include "lib/declarations.hpp"
+#include <type_traits>
+#include <urd/elements/flat.hpp>
+namespace urd {
+template<> struct data<lib::Object> {
+    urd::index<lib::Object> index;
+    int count = 0;
+    data() = default;
+    explicit data(int count_) : index(), count(count_) {}
+    static constexpr bool copyable() noexcept
+    {
+        static_assert(std::is_trivially_copyable_v<data>, "a copyable record is trivially copyable");
+        return true;
+    }
+    static constexpr auto fields() noexcept { return urd::Fields<urd::field<"count", &data::count>> {}; }
+    static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
+    static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::count> {}; }
+};
+}
+"""
 COST_DATA = """#pragma once
 #include "lib/declarations.hpp"
 #include "lib/weight.hpp"
@@ -165,9 +190,12 @@ template<typename V> struct view_mixin<urd::data<lib::Local>, V> {
 """
 # A binding source: Atom's data and view bound, and Atom's data bound by hand besides, which S3 forbids.
 BINDING = """#include "lib/atom_data.hpp"
+#include "lib/object_data.hpp"
+#include "pylib/flags.hpp"  // found only through the include path of the unity source that compiles this one
 namespace nanobind {
 template<typename T> struct class_ {
     explicit class_(int) {}
+    ~class_() {}  // not trivial, as nanobind's: a discarded class is a temporary with cleanups
     template<typename F> class_& def(const char*, F) { return *this; }
 };
 }
@@ -186,6 +214,8 @@ struct AtomPy {
 };
 void bind_derived() {
     auto held = urd::python::bind_data<lib::Atom>(0);  // a variable holding the bound class: no hand binding
+    urd::python::bind_data<lib::Atom>(0);  // the class bind_data returns, unnamed: no hand binding
+    urd::python::bind_data<lib::Object>(0);  // a record named by an alias
     urd::python::bind_view<AtomPy>(0)
         .def("get_arity", &AtomPy::get_arity)
         .def("get_fluent_literals", &AtomPy::template get_literals<FluentTag>)
@@ -196,6 +226,16 @@ void bind_derived() {
 // urd::python::bind_data<lib::Repository>(m);
 void bind() { nanobind::class_<urd::data<lib::Atom>> by_hand(0); }
 template<typename T> void bind_any() { nanobind::class_<urd::data<T>> generic(0); }
+template<typename T> using ViewOf = urd::index_view<T, int>;
+template<typename T> void bind_aliased_data() {
+    using V = urd::data<T>;
+    auto aliased_data = nanobind::class_<V>(0);
+}
+template<typename T> void bind_aliased_view() {
+    using V = ViewOf<T>;
+    nanobind::class_<V>(0).def("get_count", 0);
+}
+template<typename T> void bind_other() { auto other = nanobind::class_<T>(0); }  // not a record's: no finding
 """
 
 
@@ -209,11 +249,13 @@ def library(root: Path) -> tuple[Path, Path]:
         "include/lib/loose_data.hpp": LOOSE_DATA,
         "include/lib/weight.hpp": WEIGHT,
         "include/lib/cost_data.hpp": COST_DATA,
+        "include/lib/object_data.hpp": ALIAS_DATA,
         "include/lib/term_data.hpp": TERM_DATA,
         "include/lib/term_view.hpp": TERM_VIEW,
         "tests/unit/local.cpp": LOCAL_TEST,
         "src/lib.cpp": '#include "lib/atom_view.hpp"\n',
         "python/src/pylib/module.cpp": BINDING,
+        "python/src/pylib/flags.hpp": "#pragma once\n",
     }
     git = shutil.which("git")
     assert git is not None
@@ -222,9 +264,21 @@ def library(root: Path) -> tuple[Path, Path]:
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(text)
     subprocess.run([git, "-C", str(root), "add", "."], check=True)
+    # The binding source is compiled by a unity source (not tracked: generated), which alone has its include path.
+    unity = root / "build/unity_pylib.cxx"
+    unity.parent.mkdir()
+    unity.write_text(f'#include "{root / "python/src/pylib/module.cpp"}"\n')
     database = root / "compile_commands.json"
-    command = f"clang++ -std=c++20 -I{root / 'include'} -c src/lib.cpp"
-    database.write_text(json.dumps([{"directory": str(root), "file": "src/lib.cpp", "command": command}]))
+    flags = f"clang++ -std=c++20 -I{root / 'include'}"
+    database.write_text(
+        json.dumps(
+            [
+                {"directory": str(root), "file": "src/lib.cpp", "command": f"{flags} -c src/lib.cpp"},
+                {"directory": str(root), "file": "tests/unit/local.cpp", "command": f"{flags} -c tests/unit/local.cpp"},
+                {"directory": str(root), "file": str(unity), "command": f"{flags} -I{root / 'python/src'} -c {unity}"},
+            ]
+        )
+    )
     return root, database
 
 
@@ -245,6 +299,30 @@ def test_a_record_that_breaks_each_schema(tmp_path: Path) -> None:
 
 def test_a_record_with_one_field_follows_s1(tmp_path: Path) -> None:
     assert not [each for each in check(*library(tmp_path))["S1"] if "term_data" in each.path]
+
+
+def test_a_record_may_be_identified_by_its_index(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    identity = "static constexpr auto identifying_members() noexcept { return urd::Members<&data::"
+    by_index = TERM_DATA.replace(identity + "objects> {}; }", identity + "index> {}; }")
+    assert by_index != TERM_DATA
+    (root / "include/lib/term_data.hpp").write_text(by_index)
+    assert not [each for each in check(root, database)["S1"] if "term_data" in each.path]
+
+
+def test_a_record_without_fields_has_only_its_default_constructor(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    empty = (
+        TERM_DATA.replace("    urd::flat_vector<std::uint32_t> objects;\n", "")
+        .replace("    explicit data(urd::flat_vector<std::uint32_t> objects_) : index(), objects(objects_) {}\n", "")
+        .replace('urd::Fields<urd::field<"objects", &data::objects>>', "urd::Fields<>")
+        .replace("urd::Members<&data::objects>", "urd::Members<>")
+        .replace("urd::Members<&data::index, &data::objects>", "urd::Members<&data::index>")
+    )
+    assert "objects" not in empty
+    (root / "include/lib/term_data.hpp").write_text(empty)
+    found = [each.rule for each in check(root, database)["S1"] if "term_data" in each.path]
+    assert not [each for each in found if "constructors" in each]
 
 
 def test_a_view_may_derive_more_but_not_read_data(tmp_path: Path) -> None:
@@ -269,16 +347,54 @@ def test_a_record_bound_by_hand_is_reported(tmp_path: Path) -> None:
     assert not any("Atom is not bound" in each.rule for each in found)  # by bind_derived's bind_data call
 
 
-def test_a_variable_holding_a_bound_class_is_no_hand_binding(tmp_path: Path) -> None:
-    held = next(number for number, line in enumerate(BINDING.splitlines(), 1) if "auto held" in line)
-    found = check(*library(tmp_path))["S3"]
-    assert not any(each.path == f"python/src/pylib/module.cpp:{held}" for each in found)
+def test_a_bound_class_held_or_unnamed_is_no_hand_binding(tmp_path: Path) -> None:
+    lines = BINDING.splitlines()
+    at = [number for number, line in enumerate(lines, 1) if "bind_data<lib::Atom>(0)" in line]
+    assert len(at) == 2
+    found = {each.path for each in check(*library(tmp_path))["S3"]}
+    assert not any(f"python/src/pylib/module.cpp:{line}" in found for line in at)
 
 
 def test_a_record_bound_by_hand_in_a_template_is_reported(tmp_path: Path) -> None:
     found = check(*library(tmp_path))["S3"]
     assert any(each.rule.startswith("*: its data or view is bound by hand") for each in found)
     assert not any("Local is not bound" in each.rule for each in found)  # a test's own record
+
+
+def test_a_unity_built_binding_source_parses_with_its_unity_source_flags(tmp_path: Path) -> None:
+    found = check(*library(tmp_path))["S3"]
+    assert not any("does not parse" in each.rule for each in found)
+    assert any(each.path.startswith("python/src/pylib/module.cpp:") for each in found)
+
+
+def test_a_binding_source_not_in_the_compile_database_is_reported(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    (root / "python/src/pylib/loose.cpp").write_text(BINDING)
+    git = shutil.which("git")
+    assert git is not None
+    subprocess.run([git, "-C", str(root), "add", "."], check=True)
+    found = check(root, database)["S3"]
+    loose = [each.rule for each in found if each.path == "python/src/pylib/loose.cpp"]
+    assert any("not in the compile database" in each for each in loose)
+
+
+def test_a_binding_source_that_does_not_parse_is_reported(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    broken = BINDING + "void broken() { urd::python::init_from_views<int>(); }\n"
+    (root / "python/src/pylib/module.cpp").write_text(broken)
+    found = check(root, database)["S3"]
+    assert any(each.path == "python/src/pylib/module.cpp" and each.rule.startswith("does not parse:") for each in found)
+
+
+def test_a_record_bound_by_hand_through_an_alias_in_a_template_is_reported(tmp_path: Path) -> None:
+    lines = BINDING.splitlines()
+    marks = ("auto aliased_data", "nanobind::class_<V>(0).def", "auto other")
+    at = [next(number for number, line in enumerate(lines, 1) if mark in line) for mark in marks]
+    hand = "*: its data or view is bound by hand"
+    found = {each.path for each in check(*library(tmp_path))["S3"] if each.rule.startswith(hand)}
+    assert f"python/src/pylib/module.cpp:{at[0]}" in found  # using V = urd::data<T>
+    assert f"python/src/pylib/module.cpp:{at[1]}" in found  # using V = ViewOf<T>, an alias template of urd::index_view
+    assert f"python/src/pylib/module.cpp:{at[2]}" not in found  # class_<T>: no record's class
 
 
 def test_derived_bindings_name_the_member_function_they_bind(tmp_path: Path) -> None:
@@ -288,6 +404,11 @@ def test_derived_bindings_name_the_member_function_they_bind(tmp_path: Path) -> 
         if each.path.startswith("python/src/pylib/module.cpp") and "bound by hand" not in each.rule
     )
     assert derived == ["binds a lambda: bind the member function itself", "binds get_arity as 'arity', not 'get_arity'"]
+
+
+def test_a_record_named_by_an_alias_is_bound_by_the_alias(tmp_path: Path) -> None:
+    found = check(*library(tmp_path))["S3"]
+    assert not any("Object is not bound" in each.rule for each in found)
 
 
 def test_a_family_is_bound_by_a_member() -> None:
