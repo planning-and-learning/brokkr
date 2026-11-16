@@ -15,10 +15,10 @@ its Python package (``pytyr``; loki's is ``pypddl``).
   :Check: ``python -m pybrokkr.rules L1`` (the checks of its parts, :rule:`L1.1` to :rule:`L1.7`)
 
   The tree below is that layout: every entry a library may have, where it is and what it holds. Its parts are the
-  rules L1.1 to L1.7 of this page, each decided by a check: which files may exist (:rule:`L1.1`), which must
-  (:rule:`L1.2`), that tests and benchmarks mirror the components (:rule:`L1.3`), that stub directories are packages
-  (:rule:`L1.4`), that a unit test refers to its component (:rule:`L1.5`), that a component's header is included
-  (:rule:`L1.6`) and that every source is built and every test script run (:rule:`L1.7`).
+  rules L1.1 to L1.7 of this page (L1.6 was removed), each decided by a check: which files may exist (:rule:`L1.1`),
+  which must (:rule:`L1.2`), that tests and benchmarks mirror the components (:rule:`L1.3`), that stub directories are
+  packages (:rule:`L1.4`), that a unit test refers to its component (:rule:`L1.5`) and that every source is built and
+  every test script run (:rule:`L1.7`).
 
 Everything a library may have, each entry described in the sections below. A ``<component>/`` directory may hold
 further ``<component>/`` directories, to any depth; ``...`` stands for the same contents again.
@@ -471,18 +471,6 @@ These rules are about structure, which a pattern cannot state, and are checked b
   submodule through its package; ``python/tests/downstream/`` is of no component. A test that includes nothing of the
   directory it is in is in the wrong directory, or is no unit test (a ``main.cpp``, shared fixtures:
   ``tests/support/``).
-
-- .. rule:: layout-header-included
-  .. rule:: L1.6
-
-  :ruleid:`L1.6` :decidable:`decidable`
-  **A header is included**: a header under ``include/<lib>/<component>/`` is included by another tracked file.
-
-  :Name: ``layout-header-included``
-  :Check: ``python -m pybrokkr.rules L1.6``
-
-  A
-  header at the top of ``include/<lib>/`` is an entry a user includes.
 
 One rule needs the configured build, as only CMake knows what a target builds:
 

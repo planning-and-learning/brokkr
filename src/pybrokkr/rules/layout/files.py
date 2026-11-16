@@ -32,7 +32,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from pybrokkr.rules.references import imports_of, included_paths, includes_of, normalized
+from pybrokkr.rules.references import imports_of, includes_of, normalized
 
 NAME = r"[a-z0-9_]+"
 DIRS = rf"(?:{NAME}/)*"
@@ -314,22 +314,6 @@ def unreferencing(repository: Path, files: list[str], lib: str | None) -> list[F
     return found
 
 
-def unincluded(repository: Path, files: list[str], lib: str | None) -> list[Finding]:
-    """The headers of a component that no tracked file includes; a header at the top of include/<lib>/ is an entry."""
-    if lib is None:
-        return []
-    targets = included_paths(repository, files)
-    return [
-        Finding(each, "included by nothing")
-        for each in files
-        if each.startswith(f"include/{lib}/")
-        and each.endswith(".hpp")
-        and PurePosixPath(each).parent != PurePosixPath("include", lib)
-        and each.removeprefix("include/") not in targets
-        and each not in targets
-    ]
-
-
 # The rules of docs/directory_layout.rst this module checks, by ID: the rule's name and its check, which takes the
 # repository, its tracked files and its library (None for a Python package).
 Check = Callable[[Path, list[str], str | None], list[Finding]]
@@ -339,7 +323,6 @@ RULES: dict[str, tuple[str, Check]] = {
     "L1.3": ("layout-mirroring", lambda _, files, lib: unmirrored(files, lib)),
     "L1.4": ("layout-stub-packages", lambda _, files, __: unpackaged(files)),
     "L1.5": ("layout-unit-test-component", unreferencing),
-    "L1.6": ("layout-header-included", unincluded),
 }
 
 

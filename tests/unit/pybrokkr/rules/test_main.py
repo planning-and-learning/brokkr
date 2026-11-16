@@ -15,8 +15,8 @@ from pybrokkr.rules.layout.files import REQUIRED
 
 def test_a_rule_is_selected_by_id_name_page_class_or_all() -> None:
     assert selected(["L1.2"]) == ["L1.2"]
-    # A rule's ID selects its parts: L1 (the layout) is L1.1 to L1.7.
-    assert selected(["L1"]) == [f"L1.{part}" for part in range(1, 8)]
+    # A rule's ID selects its parts: L1 (the layout) is L1.1 to L1.5 and L1.7 (L1.6 was removed; its ID stays unused).
+    assert selected(["L1"]) == ["L1.1", "L1.2", "L1.3", "L1.4", "L1.5", "L1.7"]
     assert selected(["layout-mirroring", "L1.1"]) == ["L1.1", "L1.3"]
     assert selected(["L"]) == [rule for rule in RULES if rule.startswith("L")]
     assert selected(["decidable"]) == [rule for rule in RULES if RULES[rule].kind == "decidable"]
@@ -57,4 +57,4 @@ def test_a_rule_that_needs_the_build_without_it(tmp_path: Path) -> None:
     assert "L1.7: needs the sources of a configured build" in named.stderr
     page = run("L", "-C", str(Path(__file__).parents[4]))
     assert "L1.7 (layout-sources-built): not checked" in page.stdout
-    assert page.stdout.endswith("findings (L1.1, L1.2, L1.3, L1.4, L1.5, L1.6)\n")
+    assert page.stdout.endswith("findings (L1.1, L1.2, L1.3, L1.4, L1.5)\n")
