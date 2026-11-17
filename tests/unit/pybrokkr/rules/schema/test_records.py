@@ -823,6 +823,10 @@ def test_a_family_is_bound_by_a_member() -> None:
         ("get_entry_module", "return get_module ( ) ;", True),
         ("get_predicate", "return get_row ( ) . get_relation ( ) ;", False),
         ("get_arity", "return get_terms ( ) . size ( ) ;", False),
+        ("size", "return std :: ranges :: size ( self ( ) . get_values ( ) ) ;", True),
+        ("empty", "return std :: empty ( get_rows ( ) ) ;", True),
+        ("size", "return ranges :: size ( get_rows ( ) ) ;", True),
+        ("arity", "return std :: ranges :: size ( self ( ) . columns ( ) ) ;", False),
         ("get_terms", "return self ( ) . template member < & urd :: record_of < V > :: terms > ( ) ;", False),
     ],
 )

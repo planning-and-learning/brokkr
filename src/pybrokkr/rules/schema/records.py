@@ -434,6 +434,8 @@ def view_parameter(spelling: str) -> str:
 
 
 CHAIN = re.compile(r"\*?(?:(\w+)\(\)\.)*(\w+)\(\)")
+# The standard's customization points a range offers as members too (std::ranges::size(e), std::size(e): e.size())
+MEMBER_FORMS = re.compile(r"(?:std::)?(?:ranges::)?(size|ssize|empty|begin|end|cbegin|cend|data)\((.+)\)")
 
 
 def unwrapped(text: str) -> str:
@@ -452,7 +454,8 @@ def returned(body: list[str], receivers: tuple[str, ...]) -> str:
     """The chain of calls a body of tokens `body` returns, written without spaces; "" where it returns none.
 
     ``this->``, parentheses around it, and one local variable it is held in first (``auto s = get_symbol(); return
-    s.get_name();``) are left out, as is a leading receiver of `receivers` (the view a free function takes).
+    s.get_name();``) are left out, as is a leading receiver of `receivers` (the view a free function takes); a standard
+    customization point over it is its member (``std::ranges::size(get_values())`` is ``get_values().size()``).
     """
     text = "".join(body).replace("this->", "")
     local = re.fullmatch(r"(?:const)?auto&{0,2}(\w+)=(.+?);return\1\.(.+);", text)
@@ -461,6 +464,10 @@ def returned(body: list[str], receivers: tuple[str, ...]) -> str:
     if not text.startswith("return") or not text.endswith(";"):
         return ""
     chain = unwrapped(text[len("return") : -1])
+    # A standard customization point over a chain is the chain's own member: std::ranges::size(e) is e.size().
+    member = MEMBER_FORMS.fullmatch(chain)
+    if member:
+        chain = f"{unwrapped(member[2])}.{member[1]}()"
     for receiver in receivers:
         if chain.startswith(f"{receiver}."):
             chain = chain[len(receiver) + 1 :]
