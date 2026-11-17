@@ -658,6 +658,7 @@ def parameter_names(function: ci.Cursor) -> list[str]:
     parent = function.semantic_parent
     return parameters if parent is not None and parent.kind in VALUE_KINDS else parameters[1:]
 
+
 def deduces(template: ci.Cursor) -> bool:
     """Whether the member template `template` deduces a template argument from its parameters (``f(auto)``)."""
     parameters = [
