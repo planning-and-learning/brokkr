@@ -22,6 +22,7 @@ own files (its headers included), by shape, file and function. It only reports.
 """
 
 import argparse
+import importlib.metadata
 import json
 import os
 import shlex
@@ -95,8 +96,16 @@ def own(path: str | None, root: Path) -> str | None:
 
 
 def resource_dir() -> str:
-    """Clang's own headers (stddef.h, ...), which the PyPI wheel does not carry: those of the clang installed."""
-    clang = shutil.which("clang++") or shutil.which("clang")
+    """Clang's own headers (stddef.h, ...), which the PyPI wheel does not carry.
+
+    Those of the installed clang of libclang's major version where there is one (a newer clang's headers use builtins
+    the older libclang does not know), else of clang++.
+    """
+    try:
+        major = importlib.metadata.version("libclang").split(".")[0]
+    except importlib.metadata.PackageNotFoundError:
+        major = None
+    clang = (major and shutil.which(f"clang++-{major}")) or shutil.which("clang++") or shutil.which("clang")
     if clang is None:
         sys.exit("pybrokkr.rules.coding.fallbacks: needs clang++ for clang's own headers (clang++ -print-resource-dir)")
     return subprocess.run([clang, "-print-resource-dir"], capture_output=True, text=True, check=True).stdout.strip()
