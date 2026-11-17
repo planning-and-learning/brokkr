@@ -34,7 +34,8 @@ template<typename... Fs> constexpr auto members_of(Fields<Fs...>) noexcept { ret
 template<typename T, typename V> struct view_mixin {};
 template<typename V> using record_of = typename V::record;
 template<typename T, typename C> struct index_view {};
-template<fixed_string Name, auto Function> struct function {};
+template<fixed_string Name> struct arg {};
+template<fixed_string Name, auto Function, typename... Args> struct function {};
 template<typename... Fs> struct Functions {};
 }
 """
@@ -320,6 +321,7 @@ template<> struct data<lib::Probe> {
 namespace lib {
 template<typename V> int counted(const V& probe) { return probe.get_count(); }
 template<typename V> int raw(const V& probe) { return probe.record().count; }
+template<typename V> int scaled(const V& probe, int factor) { return probe.get_count() * factor; }
 }
 namespace urd {
 template<typename V> struct view_mixin<lib::Probe, V> : lib::Reads<V> {
@@ -338,10 +340,12 @@ template<typename V> struct view_mixin<lib::Probe, V> : lib::Reads<V> {
     {
         /* &view_mixin::hidden */
         return urd::Functions<urd::function<"x", &view_mixin::peek>,
-                              urd::function<"x", static_cast<int (view_mixin::*)(int) const>(&view_mixin::at)>,
+                              urd::function<"x", static_cast<int (view_mixin::*)(int) const>(&view_mixin::at),
+                                            urd::arg<"index">>,
                               urd::function<"x", &view_mixin::label>,
                               urd::function<"x", &lib::counted<V>>,
-                              urd::function<"x", &lib::raw<V>>> {};
+                              urd::function<"x", &lib::raw<V>>,
+                              urd::function<"x", &lib::scaled<V>>> {};
     }
     int after() const { return 0; }
 };
@@ -648,6 +652,12 @@ def test_a_mixin_reads_data_in_no_way(tmp_path: Path) -> None:
     assert "lib::Probe: reads record() of its view 1 times, not through member<>" in found  # through a variable
     assert "lib::Probe: reads record() of its view 1 times, not through member<>" in found  # the held form's mixin
     assert "raw() reads record() of its view 1 times, not through member<>" in found  # a listed free function
+    assert "scaled() takes 2 parameters: a function of a view takes the view alone" in found
+
+
+def test_listed_parameters_carry_their_own_names(tmp_path: Path) -> None:
+    found = probe_findings(tmp_path)
+    assert "lib::Probe: functions() lists x with the parameter names ['index'], not its own ['position']" in found
 
 
 def test_a_mixin_lists_every_member_but_explicit_templates(tmp_path: Path) -> None:

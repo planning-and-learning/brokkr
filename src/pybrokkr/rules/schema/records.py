@@ -588,6 +588,76 @@ def listed_in(root: ci.Cursor) -> list[ci.Cursor]:
     return found
 
 
+Entry = tuple[str, list[ci.Cursor], list[str]]
+
+
+def entries_in(root: ci.Cursor) -> list[Entry]:
+    """The entries of the urd::function lists under `root`, in order.
+
+    Each is its name, the functions its pointer may mean (the overload a static_cast picks), and the names its
+    urd::arg give its parameters.
+    """
+    entries: list[Entry] = []
+    for node in root.walk_preorder():
+        children = list(node.get_children())
+        if any(each.kind == ci.CursorKind.TEMPLATE_REF and each.spelling == "function" for each in children):
+            entries.extend(list_entries(children))
+    return entries
+
+
+def list_entries(children: list[ci.Cursor]) -> list[Entry]:
+    """The entries of one urd::Functions list, whose arguments are `children` in order (urd::function starts one)."""
+    entries: list[Entry] = []
+    naming = False
+    for child in children:
+        if child.kind == ci.CursorKind.TEMPLATE_REF and child.referenced is not None:
+            template = qualified(child.referenced)
+            if template == "urd::function":
+                started: Entry = ("", [], [])
+                entries.append(started)
+                naming = False
+            naming = naming or template == "urd::arg"
+        elif entries:
+            entries[-1] = with_part(entries[-1], child, naming=naming)
+    return entries
+
+
+def with_part(entry: Entry, child: ci.Cursor, *, naming: bool) -> Entry:
+    """`entry` with the part `child` of its urd::function: its name, its pointer, or one urd::arg's name."""
+    name, functions, given = entry
+    literal = next((each for each in child.walk_preorder() if each.kind == ci.CursorKind.STRING_LITERAL), None)
+    if literal is not None and naming:
+        given.append(literal.spelling.strip('"'))
+    elif literal is not None and not name:
+        name = literal.spelling.strip('"')
+    elif child.kind == ci.CursorKind.CXX_STATIC_CAST_EXPR:
+        functions.extend(pointed_to(child, signature(child.type)))
+    elif child.kind == ci.CursorKind.UNARY_OPERATOR and words(child)[:1] == ["&"]:
+        functions.extend(pointed_to(child, None))
+    return name, functions, given
+
+
+def argument_findings(entries: list[Entry]) -> list[str]:
+    """What S2 does not allow of the parameter names a functions() gives (urd::arg): any but the function's own.
+
+    A member's parameters are named beside its this, a free function's beside its view, its first parameter. An entry
+    points to one function: where its pointer may mean several (overloads a cast does not tell apart), one of them
+    has the names given.
+    """
+    found: list[str] = []
+    for name, functions, given in entries:
+        names = [parameter_names(each) for each in functions]
+        if names and given not in names:
+            found.append(f"functions() lists {name} with the parameter names {given}, not its own {names[0]}")
+    return found
+
+
+def parameter_names(function: ci.Cursor) -> list[str]:
+    """The names of the parameters of `function` beside its view: a member's all, a free function's but its first."""
+    parameters = [each.spelling for each in function.get_children() if each.kind == ci.CursorKind.PARM_DECL]
+    parent = function.semantic_parent
+    return parameters if parent is not None and parent.kind in VALUE_KINDS else parameters[1:]
+
 def deduces(template: ci.Cursor) -> bool:
     """Whether the member template `template` deduces a template argument from its parameters (``f(auto)``)."""
     parameters = [
@@ -671,6 +741,7 @@ def mixin_of(cursor: ci.Cursor, file: str) -> Mixin:
         if each.spelling not in {"self", "functions"} and (each.kind == ci.CursorKind.CXX_METHOD or deduces(each))
     )
     listed = frozenset(key_of(each) for each in functions if each.spelling == "functions" for each in listed_in(each))
+    own += [what for each in functions if each.spelling == "functions" for what in argument_findings(entries_in(each))]
     inherits = held and any(
         each.kind == ci.CursorKind.CXX_BASE_SPECIFIER and "view_mixin<" in each.type.spelling for each in children
     )
@@ -693,14 +764,19 @@ def mixin_of(cursor: ci.Cursor, file: str) -> Mixin:
 
 
 def free_findings(function: ci.Cursor) -> list[str]:
-    """What S2 does not allow of the free function `function` a functions() lists: forwarding, reading record().
+    """What S2 does not allow of the free function `function` a functions() lists.
 
-    Its view is its first parameter.
+    That is a parameter beside the view (a function of a view takes it alone: one that takes more is an algorithm over
+    it, bound with m.def), forwarding, or reading record().
     """
     definition = function.get_definition() or function
     parameters = [each for each in definition.get_children() if each.kind == ci.CursorKind.PARM_DECL]
     if not parameters:
         return []
+    if len(parameters) > 1:
+        return [
+            f"{definition.spelling}() takes {len(parameters)} parameters: a function of a view takes the view alone"
+        ]
     view = parameters[0]
     named_type = re.sub(r"\b(?:const|volatile)\b|[&*\s]", "", view.type.spelling)
     found = [what] if (what := forwarding(definition.spelling, words(definition), (view.spelling,))) else []

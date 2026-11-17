@@ -200,8 +200,12 @@ the same (``urd::borrowed_view<T, C, Value>``).
   #. any further member that is derived from the fields (whether it is ground, a filtered range), built on the
      getters above or on ``member<>``;
   #. ``functions()``, which lists, each under its Python name, every member of the mixin beyond ``self()`` and the field
-     getters, and the free functions over the view that are offered with it (their first parameter the view):
-     ``urd::Functions<urd::function<"<name>", &F>...>``. A member template whose template arguments its callers
+     getters, and the free functions of the view that are offered with it, whose sole parameter is the view (a member
+     may take more: which column, which values; a free function that does is an algorithm over the view, bound with
+     ``m.def``):
+     ``urd::Functions<urd::function<"<name>", &F, urd::arg<"<parameter>">...>...>``, with an ``urd::arg`` per
+     parameter beside the view, in order and under its C++ name, so that Python passes it by keyword too
+     (``urd::function<"value", &view_mixin::value, urd::arg<"column">>``). A member template whose template arguments its callers
      write (a getter templated on a tag, ``get<FluentTag>()``) is C++'s alone and not listed: Python has the plain
      getters it chooses among; one that deduces them from its parameters is listed by its instantiations, and overloads
      each with its type (``static_cast``). A mixin has no member that its ``functions()`` does not list: a member of a
