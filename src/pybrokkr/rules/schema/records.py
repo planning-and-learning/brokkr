@@ -55,10 +55,11 @@ def overloads(reference: ci.Cursor) -> list[ci.Cursor]:
 def signature(function_type: ci.Type) -> str:
     """The parameter list of a function type (or a pointer to one) as written, without namespaces and spaces.
 
-    It is its last parenthesized group: ``(int)`` of ``int (int) const`` and of ``int (view_mixin<T, V>::*)(int)
-    const``, how a static_cast picks an overload, read alike from a member and a cast whose type is dependent.
+    It is its last parenthesized group before a trailing return type: ``(int)`` of ``int (int) const``, of ``int
+    (view_mixin<T, V>::*)(int) const`` and of ``auto (int) const -> decltype(f(x))``, how a static_cast picks an
+    overload, read alike from a member and a cast whose type is dependent.
     """
-    spelled = function_type.spelling
+    spelled = function_type.spelling.split(" -> ", 1)[0]
     end = spelled.rfind(")")
     depth = 0
     for position in range(end, -1, -1):
@@ -548,7 +549,13 @@ LISTS = {"urd::function", "urd::Functions"}
 
 
 def pointed_to(node: ci.Cursor, cast: str | None) -> list[ci.Cursor]:
-    """The functions ``&F`` (`node`) points to: the overloads of F, the one a static_cast to the types `cast` picks."""
+    """The functions ``&F`` (`node`) points to: the overloads of F, the one a static_cast to the types `cast` picks.
+
+    Of a static_cast, the functions its operand points to: its type may name functions too
+    (``decltype(declval<V>().f())``).
+    """
+    if node.kind == ci.CursorKind.CXX_STATIC_CAST_EXPR:
+        node = list(node.get_children())[-1]
     reference = next((each for each in node.walk_preorder() if each.kind == ci.CursorKind.OVERLOADED_DECL_REF), None)
     if reference is None:
         reference = next((each for each in node.walk_preorder() if each.kind in REFERENCE_KINDS), None)
@@ -561,7 +568,25 @@ def pointed_to(node: ci.Cursor, cast: str | None) -> list[ci.Cursor]:
     ]
     if cast is None or len(candidates) <= 1:
         return candidates
-    return [each for each in candidates if signature(each.type) == cast]
+    return [each for each in candidates if picks(cast, each)]
+
+
+def picks(cast: str, function: ci.Cursor) -> bool:
+    """Whether a static_cast to the parameter types `cast` picks `function`.
+
+    A function's parameters as written are the cast's; a function template's match them as patterns over its template
+    parameters, as the cast instantiates it (``(Wrap<T>)`` is picked by ``(Wrap<int>)``).
+    """
+    own = signature(function.type)
+    if own == cast or function.kind != ci.CursorKind.FUNCTION_TEMPLATE:
+        return own == cast
+    parameters = tuple(each.spelling for each in function.get_children() if each.kind in TEMPLATE_PARAMETERS)
+    _, own_types = split_template(f"_<{own[1:-1]}>")
+    _, cast_types = split_template(f"_<{cast[1:-1]}>")
+    bound: dict[str, str] = {}
+    return len(own_types) == len(cast_types) and all(
+        matches(each, given, parameters, bound) for each, given in zip(own_types, cast_types, strict=True)
+    )
 
 
 def listed_in(root: ci.Cursor) -> list[ci.Cursor]:
@@ -661,16 +686,7 @@ def parameter_names(function: ci.Cursor) -> list[str]:
 
 def deduces(template: ci.Cursor) -> bool:
     """Whether the member template `template` deduces a template argument from its parameters (``f(auto)``)."""
-    parameters = [
-        each.spelling
-        for each in template.get_children()
-        if each.kind
-        in {
-            ci.CursorKind.TEMPLATE_TYPE_PARAMETER,
-            ci.CursorKind.TEMPLATE_NON_TYPE_PARAMETER,
-            ci.CursorKind.TEMPLATE_TEMPLATE_PARAMETER,
-        }
-    ]
+    parameters = [each.spelling for each in template.get_children() if each.kind in TEMPLATE_PARAMETERS]
     types = [each.type.spelling for each in template.get_children() if each.kind == ci.CursorKind.PARM_DECL]
     return any(re.search(rf"\b(?:auto|{'|'.join(map(re.escape, parameters)) or 'auto'})\b", each) for each in types)
 
@@ -992,6 +1008,11 @@ def binds_qualified(record: Record, tag: Tag) -> bool:
 
 RECORD_CLASSES = {"urd::data", "urd::index_view", "urd::borrowed_view", "urd::owning_view", "urd::shared_view"}
 REFERENCES = {ci.CursorKind.TYPE_REF, ci.CursorKind.TEMPLATE_REF}
+TEMPLATE_PARAMETERS = {
+    ci.CursorKind.TEMPLATE_TYPE_PARAMETER,
+    ci.CursorKind.TEMPLATE_NON_TYPE_PARAMETER,
+    ci.CursorKind.TEMPLATE_TEMPLATE_PARAMETER,
+}
 ALIASES = {ci.CursorKind.TYPE_ALIAS_DECL, ci.CursorKind.TYPEDEF_DECL}
 CONSTRUCTIONS = {ci.CursorKind.VAR_DECL, ci.CursorKind.CALL_EXPR, ci.CursorKind.UNEXPOSED_EXPR}
 BINDERS = ("bind_data", "bind_view", "bind_value")

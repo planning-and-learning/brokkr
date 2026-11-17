@@ -311,9 +311,11 @@ the same (``urd::borrowed_view<T, C, Value>``).
 
   Nothing else is needed: urd binds a record's fields, its index, comparison, hashing, ``str`` and ``repr``, and its
   views' field getters and ``functions()`` (S2). They define the classes below, named from the record's
-  name ``<Name>``, ``urd::name<T>()``: its tag's ``static constexpr std::string_view name``, followed by the names of
-  its template arguments (``Condition<AndTag>`` is ``ConditionAnd``), so that each tag declares its name and no binding
-  names a record or a field by hand; each call returns the class it defines. ``bind_view`` binds a record's view and a
+  name ``<Name>``, ``urd::name<T>()``: its tag's ``static constexpr std::string_view name``, as the tag declares it, so
+  that no binding names a record or a field by hand; each call returns the class it defines. A tag of a family is named
+  after its arguments where it says so (``urd::joined_name<"Condition", Tag::name>``: ``Condition<AndTag>`` is
+  ``ConditionAnd``), as the records of one module need names of their own, and not where each is bound in a module of
+  its own (``State<Kind>`` is ``State`` in ``pytyr.planning.ground`` and in ``pytyr.planning.lifted``). ``bind_view`` binds a record's view and a
   builder's view alike (a view of ``builder<T>``, whose ``fields()`` name the fields of ``data<T>``, is
   ``<Name>Builder``):
 

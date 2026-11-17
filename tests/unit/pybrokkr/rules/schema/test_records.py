@@ -302,6 +302,7 @@ PROBE = """#pragma once
 #include "lib/declarations.hpp"
 #include <urd/elements/flat.hpp>
 namespace lib { struct Probe {}; template<typename V> struct Reads {}; }
+namespace lib { template<typename T> struct Wrap {}; template<typename T> T make(); }
 namespace urd {
 template<> struct data<lib::Probe> {
     urd::index<lib::Probe> index;
@@ -334,6 +335,10 @@ template<typename V> struct view_mixin<lib::Probe, V> : lib::Reads<V> {
     int deduced(auto value) const { return 0; }
     int at(int position) const { return position; }
     int at(double position) const { return 0; }
+    template<typename T> int pick() const { return 0; }
+    template<typename T> int pick(lib::Wrap<T> wrapped) const { return 1; }
+    auto twice() const noexcept { return 0; }
+    auto twice(int times) const noexcept -> decltype(lib::make<int>()) { return times; }
     int hidden() const { return 1; }
     auto label() const { return (this->get_count()); }
     static constexpr auto functions() noexcept
@@ -342,6 +347,16 @@ template<typename V> struct view_mixin<lib::Probe, V> : lib::Reads<V> {
         return urd::Functions<urd::function<"x", &view_mixin::peek>,
                               urd::function<"x", static_cast<int (view_mixin::*)(int) const>(&view_mixin::at),
                                             urd::arg<"index">>,
+                              urd::function<"pick", static_cast<int (view_mixin::*)(lib::Wrap<int>) const>(
+                                                        &view_mixin::template pick<int>),
+                                            urd::arg<"wrapped">>,
+                              urd::function<"twice",
+                                            static_cast<decltype(lib::make<const view_mixin&>().twice())
+                                                            (view_mixin::*)() const noexcept>(&view_mixin::twice)>,
+                              urd::function<"twice",
+                                            static_cast<decltype(lib::make<const view_mixin&>().twice(1))
+                                                            (view_mixin::*)(int) const noexcept>(&view_mixin::twice),
+                                            urd::arg<"times">>,
                               urd::function<"x", &view_mixin::label>,
                               urd::function<"x", &lib::counted<V>>,
                               urd::function<"x", &lib::raw<V>>,
