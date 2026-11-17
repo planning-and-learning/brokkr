@@ -391,7 +391,7 @@ def record_findings(cursor: ci.Cursor) -> tuple[Record, list[str]]:
 
 @dataclass(frozen=True)
 class Mixin:
-    """A urd::view_mixin specialization: the record tag it serves, where it is, its members, its reads of data().
+    """A urd::view_mixin specialization: the record tag it serves, where it is, its members, its reads of record().
 
     The tag is the mixin's key without data<> or builder<>: a mixin of either serves the record's views too.
     """
@@ -524,10 +524,10 @@ def names_view(reference: ci.Cursor, view: str, parameter: ci.Cursor | None, dep
 
 
 def data_reads(function: ci.Cursor, view: str, parameter: ci.Cursor | None = None) -> int:
-    """How often `function` calls data() of its view (is_view), whichever way it reaches it."""
+    """How often `function` calls record() of its view (is_view), whichever way it reaches it."""
     count = 0
     for node in function.walk_preorder():
-        if node.kind != ci.CursorKind.MEMBER_REF_EXPR or words(node)[-1:] != ["data"]:
+        if node.kind != ci.CursorKind.MEMBER_REF_EXPR or words(node)[-1:] != ["record"]:
             continue
         objects = list(node.get_children())
         if objects and is_view(objects[0], view, parameter):
@@ -656,7 +656,7 @@ def mixin_of(cursor: ci.Cursor, file: str) -> Mixin:
         bodies.setdefault(each.spelling, []).extend(words(each))
     own = shape_findings(cursor, held=held)
     if reads:
-        own.append(f"reads data() of its view {reads} times, not through member<>")
+        own.append(f"reads record() of its view {reads} times, not through member<>")
     own += [what for each in functions if each.spelling != "self" if (what := forwarding(each.spelling, words(each)))]
     members = tuple(
         (each.spelling, key_of(each))
@@ -686,7 +686,7 @@ def mixin_of(cursor: ci.Cursor, file: str) -> Mixin:
 
 
 def free_findings(function: ci.Cursor) -> list[str]:
-    """What S2 does not allow of the free function `function` a functions() lists: forwarding, reading data().
+    """What S2 does not allow of the free function `function` a functions() lists: forwarding, reading record().
 
     Its view is its first parameter.
     """
@@ -698,7 +698,7 @@ def free_findings(function: ci.Cursor) -> list[str]:
     named_type = re.sub(r"\b(?:const|volatile)\b|[&*\s]", "", view.type.spelling)
     found = [what] if (what := forwarding(definition.spelling, words(definition), (view.spelling,))) else []
     if reads := data_reads(definition, named_type, view):
-        found.append(f"{definition.spelling}() reads data() of its view {reads} times, not through member<>")
+        found.append(f"{definition.spelling}() reads record() of its view {reads} times, not through member<>")
     return found
 
 

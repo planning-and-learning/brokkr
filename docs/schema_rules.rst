@@ -183,7 +183,7 @@ the same (``urd::borrowed_view<T, C, Value>``).
   .. rule:: S2
 
   :ruleid:`S2` :decidable:`decidable` **A record's view has one** ``get_<field>()`` **per field and may derive more from
-  them, never reading** ``data()``.
+  them, never reading** ``record()``.
 
   :Name: ``schema-record-view``
   :Check: ``python -m pybrokkr.rules S2`` (with the compile database of a configured build)
@@ -218,18 +218,18 @@ the same (``urd::borrowed_view<T, C, Value>``).
   ``get_symbol().get_name()``) or is one call on the view itself (``get_state_repository()`` as ``context()``),
   written with ``this->``, in parentheses or through one local variable alike; its callers read that path. A free
   function that ``functions()`` lists is held to the same as a member: it does not only forward, and reads no
-  ``data()`` of its view (its first parameter). One under a name of its own over a path (a ground atom's ``get_predicate()`` as
+  ``record()`` of its view (its first parameter). One under a name of its own over a path (a ground atom's ``get_predicate()`` as
   ``get_row().get_relation()``) is a function of its own.
 
   A held form's mixin that inherits the tag's (``view_mixin<data<T>, V> : view_mixin<T, V>``) has its getters and adds
   what the held form has (an index, its repository).
 
-  Nothing in a mixin calls ``data()``: the record's stored form bypasses the resolution ``member<>`` does and ties the
-  view to how the record is laid out. Fields chosen by a tag (the literals of each kind) have their getters
+  Nothing in a mixin calls ``record()``: the record's stored form bypasses the resolution ``member<>`` does and ties
+  the view to how the record is laid out. Fields chosen by a tag (the literals of each kind) have their getters
   like any other; a getter templated on the tag that reads one of them is a derived member,
-  after the field getters. A context may hand a record out by value instead of by
-  reference (a stored row: its values decoded from its pool); ``member<>`` then reads values of it, never references
-  into it, and the getters are the same.
+  after the field getters. A context that keeps its records in a layout of its own (a stored row: its values decoded
+  from its pool) hands out no record but each field by the key (``urd::ReadsFieldsByKey``); ``member<>`` then reads values
+  of it, never references into it, and the getters are the same.
 
   A family of tags (``template<TaskKind T, FactKind F> struct Atom``) has a mixin per record specialization, or one
   generic mixin that serves several of them: a partial specialization whose tag, over its own parameters, matches each

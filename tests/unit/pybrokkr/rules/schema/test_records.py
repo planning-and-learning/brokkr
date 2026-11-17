@@ -167,7 +167,7 @@ template<> struct data<lib::Term> {
 };
 }
 """
-# A view that reads the record's stored form: S2 forbids data() in a mixin.
+# A view that reads the record's stored form: S2 forbids record() in a mixin.
 TERM_VIEW = """#pragma once
 #include "lib/term_data.hpp"
 namespace urd {
@@ -175,7 +175,7 @@ template<typename V> struct view_mixin<lib::Term, V> {
 private:
     const V& self() const noexcept { return static_cast<const V&>(*this); }
 public:
-    auto get_objects() const noexcept { return self().data().objects; }
+    auto get_objects() const noexcept { return self().record().objects; }
 };
 }
 """
@@ -188,7 +188,7 @@ template<> struct data<lib::Local> {
     int count = 0;
 };
 template<typename V> struct view_mixin<urd::data<lib::Local>, V> {
-    auto get_count() const noexcept { return static_cast<const V&>(*this).data().count; }
+    auto get_count() const noexcept { return static_cast<const V&>(*this).record().count; }
 };
 }
 """
@@ -294,9 +294,9 @@ struct Outer {
 }
 """
 # A record of S1's form, and a mixin that breaks S2 in every way it can: a base, a public self(), members that are no
-# functions, data() read through a variable, a deduced member template and an overload not listed, a member listed only
-# in a comment, a forwarder, a member after functions(). Its held form's mixin reads data() and lists nothing. Free
-# functions listed: one forwards, one reads data().
+# functions, record() read through a variable, a deduced member template and an overload not listed, a member listed
+# only in a comment, a forwarder, a member after functions(). Its held form's mixin reads record() and lists nothing.
+# Free functions listed: one forwards, one reads record().
 PROBE = """#pragma once
 #include "lib/declarations.hpp"
 #include <urd/elements/flat.hpp>
@@ -319,7 +319,7 @@ template<> struct data<lib::Probe> {
 }
 namespace lib {
 template<typename V> int counted(const V& probe) { return probe.get_count(); }
-template<typename V> int raw(const V& probe) { return probe.data().count; }
+template<typename V> int raw(const V& probe) { return probe.record().count; }
 }
 namespace urd {
 template<typename V> struct view_mixin<lib::Probe, V> : lib::Reads<V> {
@@ -327,7 +327,7 @@ template<typename V> struct view_mixin<lib::Probe, V> : lib::Reads<V> {
     auto get_count() const noexcept { return self().template member<&urd::record_of<V>::count>(); }
     using alias = int;
     int cache = 0;
-    int peek() const { const auto& view = static_cast<const V&>(*this); return view.data().count; }
+    int peek() const { const auto& view = static_cast<const V&>(*this); return view.record().count; }
     template<typename T> int explicit_template() const { return 0; }
     int deduced(auto value) const { return 0; }
     int at(int position) const { return position; }
@@ -349,7 +349,7 @@ template<typename V> struct view_mixin<urd::data<lib::Probe>, V> : view_mixin<li
 private:
     const V& self() const noexcept { return static_cast<const V&>(*this); }
 public:
-    int stored() const { return self().data().count; }
+    int stored() const { return self().record().count; }
 };
 }
 """
@@ -626,7 +626,7 @@ def test_records_of_one_name_in_two_namespaces_are_paired_with_their_own_mixins(
 def test_a_view_may_derive_more_but_not_read_data(tmp_path: Path) -> None:
     found = check(*library(tmp_path))["S2"]
     assert not [each for each in found if "atom_data" in each.path]
-    assert any(each.rule == "lib::Term: reads data() of its view 1 times, not through member<>" for each in found)
+    assert any(each.rule == "lib::Term: reads record() of its view 1 times, not through member<>" for each in found)
 
 
 def probe_findings(tmp_path: Path) -> set[str]:
@@ -645,9 +645,9 @@ def test_a_mixin_declares_member_functions_alone_without_a_base(tmp_path: Path) 
 
 def test_a_mixin_reads_data_in_no_way(tmp_path: Path) -> None:
     found = probe_findings(tmp_path)
-    assert "lib::Probe: reads data() of its view 1 times, not through member<>" in found  # through a variable
-    assert "lib::Probe: reads data() of its view 1 times, not through member<>" in found  # the held form's mixin
-    assert "raw() reads data() of its view 1 times, not through member<>" in found  # a listed free function
+    assert "lib::Probe: reads record() of its view 1 times, not through member<>" in found  # through a variable
+    assert "lib::Probe: reads record() of its view 1 times, not through member<>" in found  # the held form's mixin
+    assert "raw() reads record() of its view 1 times, not through member<>" in found  # a listed free function
 
 
 def test_a_mixin_lists_every_member_but_explicit_templates(tmp_path: Path) -> None:
@@ -699,7 +699,7 @@ def test_a_trivially_copyable_record_declares_copyable(tmp_path: Path) -> None:
 def test_records_and_mixins_in_sources_are_checked(tmp_path: Path) -> None:
     found = check(*library(tmp_path))
     assert any(each.path.startswith("tests/unit/local.cpp") and "constructors" in each.rule for each in found["S1"])
-    assert any(each.path.startswith("tests/unit/local.cpp") and "reads data()" in each.rule for each in found["S2"])
+    assert any(each.path.startswith("tests/unit/local.cpp") and "reads record()" in each.rule for each in found["S2"])
 
 
 def test_a_record_bound_by_hand_is_reported(tmp_path: Path) -> None:
@@ -760,7 +760,14 @@ def test_a_record_bound_by_hand_through_an_alias_in_a_template_is_reported(tmp_p
 
 def test_a_bound_class_gets_no_def_however_it_is_reached(tmp_path: Path) -> None:
     lines = BINDING.splitlines()
-    marks = ("helped.def", "bind_atom_view().def", '.def("chained"', 'm.def("over_view"', 'm.def("parse"', 'm.def("search"')
+    marks = (
+        "helped.def",
+        "bind_atom_view().def",
+        '.def("chained"',
+        'm.def("over_view"',
+        'm.def("parse"',
+        'm.def("search"',
+    )
     at = [next(number for number, line in enumerate(lines, 1) if mark in line) for mark in marks]
     found = {each.path: each.rule for each in check(*library(tmp_path))["S3"]}
     for line in at[:3]:
