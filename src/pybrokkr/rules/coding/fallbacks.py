@@ -96,10 +96,9 @@ def own(path: str | None, root: Path) -> str | None:
 
 
 def resource_dir() -> str:
-    """Clang's own headers (stddef.h, ...), which the PyPI wheel does not carry.
+    """Clang's own headers (stddef.h, ...), which the PyPI wheel does not carry: those of the clang installed.
 
-    Those of the installed clang of libclang's major version where there is one (a newer clang's headers use builtins
-    the older libclang does not know), else of clang++.
+    That of libclang's major version where there is one, else clang++ (index() then loads its libclang).
     """
     try:
         major = importlib.metadata.version("libclang").split(".")[0]
@@ -109,6 +108,28 @@ def resource_dir() -> str:
     if clang is None:
         sys.exit("pybrokkr.rules.coding.fallbacks: needs clang++ for clang's own headers (clang++ -print-resource-dir)")
     return subprocess.run([clang, "-print-resource-dir"], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def index(resource: str) -> ci.Index:
+    """A libclang index that parses with the headers of `resource` (resource_dir()).
+
+    A newer clang's headers use builtins an older libclang does not know (clang 21's intrinsics, which TBB includes,
+    __builtin_elementwise_popcount for libclang 18): where the clang of `resource` is not of libclang's major version,
+    its own libclang (<llvm>/lib/libclang-<major>.so.*, beside lib/clang/<major>), if installed, is loaded instead.
+    """
+    if not ci.Config.loaded:
+        try:
+            wheel = importlib.metadata.version("libclang").split(".")[0]
+        except importlib.metadata.PackageNotFoundError:
+            wheel = None
+        headers = Path(resource)
+        if wheel is not None and headers.name != wheel:
+            libraries = sorted(headers.parents[1].glob(f"libclang-{headers.name}.so*")) or sorted(
+                headers.parents[1].glob("libclang.so*")
+            )
+            if libraries:
+                ci.Config.set_library_file(str(libraries[0]))
+    return ci.Index.create()
 
 
 def flags_of(entry: dict[str, str]) -> list[str]:
@@ -223,7 +244,7 @@ def findings_of(job: tuple[dict[str, str], str, str]) -> tuple[list[Finding], li
     entry, root, resource = job
     os.chdir(entry["directory"])
     try:
-        unit = ci.Index.create().parse(entry["file"], args=[*flags_of(entry), "-resource-dir", resource, "-x", "c++"])
+        unit = index(resource).parse(entry["file"], args=[*flags_of(entry), "-resource-dir", resource, "-x", "c++"])
     except ci.TranslationUnitLoadError as error:
         # Reported with the parse errors: its findings are missing.
         return [], [f"{entry['file']}: libclang could not parse it ({error})"]

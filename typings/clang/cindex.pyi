@@ -155,6 +155,11 @@ class _Conf:
 
 conf: _Conf
 
+class Config:
+    loaded: bool
+    @staticmethod
+    def set_library_file(filename: str) -> None: ...
+
 class Diagnostic:
     Error: int
     @property

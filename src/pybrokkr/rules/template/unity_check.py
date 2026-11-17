@@ -21,7 +21,7 @@ from pathlib import Path
 
 import clang.cindex as ci
 
-from pybrokkr.rules.coding.fallbacks import flags_of, resource_dir
+from pybrokkr.rules.coding.fallbacks import flags_of, index, resource_dir
 
 FUNCTIONS = {ci.CursorKind.FUNCTION_DECL, ci.CursorKind.FUNCTION_TEMPLATE}
 
@@ -40,7 +40,7 @@ def file_local_functions(entry: dict[str, str], clang_headers: str) -> set[str]:
     """The functions with internal linkage that the source itself declares (not its headers), by qualified name."""
     source = entry["file"]
     flags = [*flags_of(entry), "-resource-dir", clang_headers]
-    unit = ci.Index.create().parse(source, args=flags, options=ci.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES)
+    unit = index(clang_headers).parse(source, args=flags, options=ci.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES)
     found: set[str] = set()
     for cursor in unit.cursor.walk_preorder():
         location = cursor.location.file

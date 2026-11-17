@@ -21,7 +21,7 @@ from pathlib import Path
 
 import clang.cindex as ci
 
-from pybrokkr.rules.coding.fallbacks import flags_of, resource_dir
+from pybrokkr.rules.coding.fallbacks import flags_of, index, resource_dir
 from pybrokkr.rules.layout.files import Finding, tracked
 
 METHODS = ["fields", "identifying_members", "cista_members"]
@@ -186,7 +186,7 @@ def parse(file: Path, flags: list[str], resource: str) -> tuple[ci.TranslationUn
     source = file.suffix == ".cpp"
     probe = file if source else file.with_name("__brokkr_schema__.cpp")
     try:
-        unit = ci.Index.create().parse(
+        unit = index(resource).parse(
             str(probe),
             args=[*flags, "-resource-dir", resource, "-x", "c++"],
             unsaved_files=[] if source else [(str(probe), f'#include "{file}"\n')],
