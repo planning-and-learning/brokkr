@@ -199,19 +199,26 @@ the same (``urd::borrowed_view<T, C, Value>``).
      ``self().template member<&urd::record_of<V>::<field>>()``: the field resolved through the view's context;
   #. any further member that is derived from the fields (whether it is ground, a filtered range), built on the
      getters above or on ``member<>``;
-  #. ``functions()``, which lists, each under its Python name, every member of the mixin beyond ``self()`` and the
-     field getters, and the free functions over the view that are offered with it (their first parameter the view):
-     ``urd::Functions<urd::function<"<name>", &F>...>``. A member template is listed once per instantiation, under the
-     name that puts its tags' names after ``get_`` (``&view_mixin::template get_literals<FluentTag>`` as
-     ``get_fluent_literals``); overloads are listed each with its type (``static_cast``). A mixin has no member that
-     its ``functions()`` does not list: a member of a view is its interface. A free function is listed only where
-     Python is to see it; a free helper of the derived functions (in ``detail``) is not listed and not bound.
+  #. ``functions()``, which lists, each under its Python name, every member of the mixin beyond ``self()`` and the field
+     getters, and the free functions over the view that are offered with it (their first parameter the view):
+     ``urd::Functions<urd::function<"<name>", &F>...>``. A member template whose template arguments its callers
+     write (a getter templated on a tag, ``get<FluentTag>()``) is C++'s alone and not listed: Python has the plain
+     getters it chooses among; one that deduces them from its parameters is listed by its instantiations, and overloads
+     each with its type (``static_cast``). A mixin has no member that its ``functions()`` does not list: a member of a
+     view is its interface. A free function is listed only where Python is to see it; a free helper of the derived
+     functions (in ``detail``) is not listed and not bound.
+
+  A mixin declares member functions alone, no data member, alias, nested type or using-declaration, and has no base
+  but, a held form's, its tag's mixin: what a view offers is in its mixin, where the rule sees it. ``self()`` is its one
+  private member; a helper its functions share is a free function in ``detail``.
 
   The view reads, a function derives: whether a derived function is a member or a free function is a matter of the C++
   call alone, as both are listed and bound alike. A function derives something new: none only forwards, its body a
   single ``return`` of a chain of calls without arguments that ends in a call of its own name (``get_name()`` as
-  ``get_symbol().get_name()``) or is one call on the view itself (``get_state_repository()`` as ``context()``); its
-  callers read that path. One under a name of its own over a path (a ground atom's ``get_predicate()`` as
+  ``get_symbol().get_name()``) or is one call on the view itself (``get_state_repository()`` as ``context()``),
+  written with ``this->``, in parentheses or through one local variable alike; its callers read that path. A free
+  function that ``functions()`` lists is held to the same as a member: it does not only forward, and reads no
+  ``data()`` of its view (its first parameter). One under a name of its own over a path (a ground atom's ``get_predicate()`` as
   ``get_row().get_relation()``) is a function of its own.
 
   A held form's mixin that inherits the tag's (``view_mixin<data<T>, V> : view_mixin<T, V>``) has its getters and adds
@@ -331,9 +338,13 @@ the same (``urd::borrowed_view<T, C, Value>``).
 
   Each entry of a mixin's ``functions()``, a member or a free function over the view, becomes a method of the view's
   class under its listed name: what a view offers in Python is decided where the view is, by ``fields()`` and
-  ``functions()``, never by a ``.def`` in a binding. A free function that is no function of a view (a parser, a search)
-  is bound with ``m.def``; a binding may use helpers of its own made of these calls. A test's own records (outside
-  ``include/``) are not bound.
+  ``functions()``, never by a ``.def`` in a binding, on a class these calls return however it is reached (chained, held
+  in a variable, returned by a helper). A function whose sole parameter is a view is a function of that view: it is
+  listed in the view's ``functions()``, not bound with ``m.def``. One that takes more (options, a context, limits) is
+  an algorithm over the view, bound with ``m.def`` with its keywords and defaults. A free function that is no function of a view (a parser, a search)
+  is bound with ``m.def``; a binding may use helpers of its own made of these calls. Binding code is every tracked
+  file that binds with nanobind: ``python/src``, a library's ``include/<lib>/python``, a test's module. A test's own
+  records (outside ``include/``) are not bound, nor those of a library without bindings of its own (``python/src``).
 
   .. code-block:: cpp
 
@@ -357,12 +368,14 @@ and no view, and is copied like any C++ value.
   :Name: ``schema-value``
   :Check: ``python -m pybrokkr.rules S4`` (with the compile database of a configured build)
 
-  Every struct or class template with a static ``fields()`` that is no record is a value. ``fields()`` lists its
-  members as a record's does, ``identifying_members()`` those it is compared and hashed by, and ``name`` the name it is
-  written and bound under. A value a record stores also declares ``cista_members()``, which cista requires there, so the
+  Every struct or class template with a static ``fields()`` that is no record is a value, nested in a class or not.
+  ``fields()`` lists its data members as a record's does, each once under its name and in order,
+  ``identifying_members()`` those it is compared and hashed by, and ``static constexpr std::string_view name`` the name
+  it is written and bound under. A value a record stores also declares ``cista_members()``, which cista requires there, so the
   build checks it. ``bind_value`` binds its constructor from its fields, each field read and written under its name,
-  comparison by its identifying members, and ``str`` and ``repr`` by urd's formatter; a class of it bound by hand
-  (``nb::class_<T>``) is a finding.
+  comparison by its identifying members, and ``str`` and ``repr`` by urd's formatter; a library's value (under
+  ``include/``) is bound where the library has bindings (``python/src``), and a class of it bound by hand (``nb::class_<T>``), or a ``.def`` on the class
+  ``bind_value`` returns, is a finding.
 
   .. code-block:: cpp
 

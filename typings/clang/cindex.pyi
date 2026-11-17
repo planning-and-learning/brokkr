@@ -10,6 +10,14 @@ class CursorKind:
     LAMBDA_EXPR: CursorKind
     BREAK_STMT: CursorKind
     CALL_EXPR: CursorKind
+    UNARY_OPERATOR: CursorKind
+    PARM_DECL: CursorKind
+    PAREN_EXPR: CursorKind
+    OVERLOADED_DECL_REF: CursorKind
+    CXX_THIS_EXPR: CursorKind
+    CXX_STATIC_CAST_EXPR: CursorKind
+    CXX_FUNCTIONAL_CAST_EXPR: CursorKind
+    CSTYLE_CAST_EXPR: CursorKind
     CLASS_DECL: CursorKind
     CLASS_TEMPLATE: CursorKind
     CLASS_TEMPLATE_PARTIAL_SPECIALIZATION: CursorKind
@@ -47,6 +55,17 @@ class CursorKind:
     VAR_DECL: CursorKind
     @property
     def name(self) -> str: ...
+    def is_declaration(self) -> bool: ...
+    def is_expression(self) -> bool: ...
+    def is_attribute(self) -> bool: ...
+
+class TokenKind:
+    COMMENT: TokenKind
+
+class AccessSpecifier:
+    PUBLIC: AccessSpecifier
+    @property
+    def name(self) -> str: ...
 
 class LinkageKind:
     INTERNAL: LinkageKind
@@ -61,6 +80,8 @@ class SourceLocation:
     @property
     def line(self) -> int: ...
     @property
+    def column(self) -> int: ...
+    @property
     def offset(self) -> int: ...
 
 class SourceRange:
@@ -73,6 +94,8 @@ class Token:
     @property
     def spelling(self) -> str: ...
     @property
+    def kind(self) -> TokenKind: ...
+    @property
     def extent(self) -> SourceRange: ...
 
 class Type:
@@ -81,6 +104,7 @@ class Type:
     def get_canonical(self) -> Type: ...
     def get_num_template_arguments(self) -> int: ...
     def get_template_argument_type(self, num: int) -> Type: ...
+    def get_declaration(self) -> Cursor: ...
 
 class Cursor:
     @property
@@ -115,6 +139,21 @@ class Cursor:
     def is_copy_assignment_operator_method(self) -> bool: ...
     def is_move_assignment_operator_method(self) -> bool: ...
     def get_arguments(self) -> Iterator[Cursor]: ...
+    def get_definition(self) -> Cursor | None: ...
+    @property
+    def access_specifier(self) -> AccessSpecifier: ...
+    @property
+    def underlying_typedef_type(self) -> Type: ...
+
+class _Lib:
+    def clang_getNumOverloadedDecls(self, cursor: Cursor) -> int: ...  # noqa: N802 (libclang's name)
+    def clang_getOverloadedDecl(self, cursor: Cursor, index: int) -> Cursor: ...  # noqa: N802
+    def clang_getSpecializedCursorTemplate(self, cursor: Cursor) -> Cursor | None: ...  # noqa: N802
+
+class _Conf:
+    lib: _Lib
+
+conf: _Conf
 
 class Diagnostic:
     Error: int

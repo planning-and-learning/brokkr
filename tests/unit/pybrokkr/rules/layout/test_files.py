@@ -152,13 +152,4 @@ def test_a_unit_test_refers_to_its_component(tmp_path: Path) -> None:
     assert found == {
         ("python/tests/core/test_other.py", "imports nothing of its component (pylib.core)"),
         ("tests/unit/search/astar.cpp", "includes no header of its component (lib/search)"),
-        ("include/lib/search/astar.hpp", "included by nothing"),
     }
-
-
-def test_a_header_is_included(tmp_path: Path) -> None:
-    files = [*ALLOWED, "include/lib/core/pool.hpp", "include/lib/core/detail/pool_impl.hpp", "include/lib/lib.hpp"]
-    contents = {"include/lib/core/pool.hpp": '#include "detail/pool_impl.hpp"\n'}
-    found = {(each.path, each.rule) for each in check(repository(tmp_path, files, contents))}
-    # pool_impl.hpp is included relative to pool.hpp; lib.hpp is an entry header; nothing includes pool.hpp.
-    assert found == {("include/lib/core/pool.hpp", "included by nothing")}
