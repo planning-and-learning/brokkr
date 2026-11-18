@@ -78,6 +78,24 @@ Instantiation
 
   :Name: ``template-no-deduced-returns``
 
+- .. rule:: template-no-deduced-constrained-overloads
+  .. rule:: T4.1
+
+  :ruleid:`T4.1` :decidable:`decidable`
+  **No deduced return types on overloads that differ only in their constraints** (same name, parameters and
+  qualifiers, told apart by their requires-clauses): write the return types out, or make them one function that
+  branches with ``if constexpr``.
+
+  :Name: ``template-no-deduced-constrained-overloads``
+
+  Taking the address of the overload set (``&T::f``, as a binding's member list does) deduces the return type of every
+  overload, and so instantiates the bodies of those whose constraints fail too. AppleClang does not mangle
+  requires-clauses (upstream clang does since 18; ``-fclang-abi-compat=17`` shows the old scheme), so those bodies share
+  a symbol: in one TU the compiler rejects it (definition with same mangled name), across TUs the linker silently keeps
+  either. runir's role denotations ran their concept overload of ``indices()`` on macOS this way. Overloads that differ
+  in their parameters have symbols of their own, and member function templates constrained on their own template
+  parameters drop out before their bodies are instantiated.
+
 - .. rule:: template-split-by-cost
   .. rule:: T5
 
