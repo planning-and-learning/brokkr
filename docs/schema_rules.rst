@@ -22,67 +22,99 @@ ever removed.
 .. raw:: html
 
    <figure class="record-diagram" style="margin: 1.5em 0; padding: 1em 1em 0.6em; text-align: center; border: 1px solid var(--color-background-border); border-radius: 0.4em;">
-   <svg viewBox="0 0 860 640" width="100%" style="max-width: 860px; font-family: var(--font-stack--monospace); font-size: 13px;" role="img" aria-label="UML class diagram of a record, its Store, its index and its view">
+   <svg viewBox="0 0 1260 650" width="100%" style="max-width: 1260px; font-family: var(--font-stack--monospace); font-size: 13px;" role="img" aria-label="UML class diagram of a record, its Store, its index, its views, its builder and the borrowed view of a builder or a record">
      <defs>
        <marker id="uml-open" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="10" markerHeight="10" orient="auto">
          <path d="M0,0 L11,6 L0,12" fill="none" stroke="currentColor" stroke-width="1.5"/>
        </marker>
      </defs>
      <g fill="none" stroke="currentColor" stroke-width="1.4">
-       <rect x="500" y="20" width="340" height="130"/>
-       <line x1="500" y1="70" x2="840" y2="70"/>
-       <line x1="500" y1="100" x2="840" y2="100"/>
-       <rect x="20" y="220" width="340" height="130"/>
-       <line x1="20" y1="270" x2="360" y2="270"/>
-       <line x1="20" y1="300" x2="360" y2="300"/>
-       <rect x="500" y="220" width="340" height="114" style="stroke: var(--color-brand-primary);" stroke-width="2.2"/>
-       <line x1="500" y1="254" x2="840" y2="254" style="stroke: var(--color-brand-primary);" stroke-width="2.2"/>
-       <line x1="500" y1="304" x2="840" y2="304" style="stroke: var(--color-brand-primary);" stroke-width="2.2"/>
+       <rect x="460" y="20" width="340" height="130"/>
+       <line x1="460" y1="70" x2="800" y2="70"/>
+       <line x1="460" y1="100" x2="800" y2="100"/>
+       <rect x="460" y="220" width="340" height="130"/>
+       <line x1="460" y1="270" x2="800" y2="270"/>
+       <line x1="460" y1="300" x2="800" y2="300"/>
+       <rect x="460" y="430" width="340" height="190"/>
+       <line x1="460" y1="480" x2="800" y2="480"/>
+       <line x1="460" y1="550" x2="800" y2="550"/>
+       <rect x="900" y="220" width="340" height="114" style="stroke: var(--color-brand-primary);" stroke-width="2.2"/>
+       <line x1="900" y1="254" x2="1240" y2="254" style="stroke: var(--color-brand-primary);" stroke-width="2.2"/>
+       <line x1="900" y1="304" x2="1240" y2="304" style="stroke: var(--color-brand-primary);" stroke-width="2.2"/>
+       <rect x="900" y="460" width="340" height="94"/>
+       <line x1="900" y1="494" x2="1240" y2="494"/>
+       <line x1="900" y1="524" x2="1240" y2="524"/>
+       <rect x="20" y="220" width="340" height="114"/>
+       <line x1="20" y1="254" x2="360" y2="254"/>
+       <line x1="20" y1="304" x2="360" y2="304"/>
        <rect x="20" y="430" width="340" height="190"/>
        <line x1="20" y1="480" x2="360" y2="480"/>
        <line x1="20" y1="550" x2="360" y2="550"/>
-       <rect x="500" y="460" width="340" height="94"/>
-       <line x1="500" y1="494" x2="840" y2="494"/>
-       <line x1="500" y1="524" x2="840" y2="524"/>
-       <line x1="670.0" y1="220" x2="670.0" y2="164"/>
-       <path d="M670.0,150 l-9,14 l18,0 z" fill="var(--color-background-primary)"/>
-       <line x1="500" y1="277" x2="362" y2="277" marker-end="url(#uml-open)"/>
-       <path d="M190.0,350 l-7,10 l7,10 l7,-10 z" fill="currentColor"/>
-       <line x1="190.0" y1="370" x2="190.0" y2="430"/>
-       <line x1="670.0" y1="334" x2="670.0" y2="458" marker-end="url(#uml-open)"/>
-       <line x1="360" y1="507.0" x2="498" y2="507.0" marker-end="url(#uml-open)"/>
+       <polyline points="190,220 190,85 446,85"/>
+       <path d="M460,85 l-14,-9 l0,18 z" fill="var(--color-background-primary)"/>
+       <polyline points="1070,220 1070,85 814,85"/>
+       <path d="M800,85 l14,-9 l0,18 z" fill="var(--color-background-primary)"/>
+       <line x1="360" y1="285" x2="458" y2="285" marker-end="url(#uml-open)"/>
+       <line x1="900" y1="285" x2="802" y2="285" marker-end="url(#uml-open)"/>
+       <path d="M630,350 l-7,10 l7,10 l7,-10 z" fill="currentColor"/>
+       <line x1="630" y1="370" x2="630" y2="430"/>
+       <line x1="190" y1="334" x2="190" y2="428" marker-end="url(#uml-open)"/>
+       <line x1="1070" y1="334" x2="1070" y2="458" marker-end="url(#uml-open)"/>
+       <line x1="800" y1="507" x2="898" y2="507" marker-end="url(#uml-open)"/>
+       <line x1="360" y1="525" x2="458" y2="525" stroke-dasharray="6 4" marker-end="url(#uml-open)"/>
+       <line x1="360" y1="320" x2="458" y2="446" marker-end="url(#uml-open)"/>
      </g>
      <g fill="currentColor" stroke="none">
-       <text x="670.0" y="40" text-anchor="middle" font-style="italic" font-size="12">«mixin»</text>
-       <text x="670.0" y="58" text-anchor="middle" font-weight="700">view_mixin&lt;Atom, V&gt;</text>
-       <text x="510" y="120">+ get_predicate()</text>
-       <text x="510" y="140">+ get_terms()</text>
-       <text x="190.0" y="240" text-anchor="middle" font-style="italic" font-size="12">«pool»</text>
-       <text x="190.0" y="258" text-anchor="middle" font-weight="700">Store</text>
-       <text x="30" y="320">+ insert(data&lt;Atom&gt;) : index&lt;Atom&gt;</text>
-       <text x="30" y="340">+ operator[](index&lt;Atom&gt;) : data&lt;Atom&gt;</text>
-       <text x="670.0" y="242" text-anchor="middle" font-weight="700" style="fill: var(--color-brand-primary);">index_view&lt;Atom, Store&gt;</text>
-       <text x="510" y="274">- index : index&lt;Atom&gt;</text>
-       <text x="510" y="294">- context : const Store*</text>
-       <text x="510" y="324">+ member&lt;&amp;F&gt;()</text>
-       <text x="190.0" y="450" text-anchor="middle" font-style="italic" font-size="12">«record»</text>
-       <text x="190.0" y="468" text-anchor="middle" font-weight="700">data&lt;Atom&gt;</text>
+       <text x="630" y="40" text-anchor="middle" font-style="italic" font-size="12">«mixin»</text>
+       <text x="630" y="58" text-anchor="middle" font-weight="700">view_mixin&lt;Atom, V&gt;</text>
+       <text x="470" y="120">+ get_predicate()</text>
+       <text x="470" y="140">+ get_terms()</text>
+       <text x="630" y="240" text-anchor="middle" font-style="italic" font-size="12">«pool»</text>
+       <text x="630" y="258" text-anchor="middle" font-weight="700">Store</text>
+       <text x="470" y="320">+ insert(data&lt;Atom&gt;) : index&lt;Atom&gt;</text>
+       <text x="470" y="340">+ operator[](index&lt;Atom&gt;) : data&lt;Atom&gt;</text>
+       <text x="630" y="450" text-anchor="middle" font-style="italic" font-size="12">«record»</text>
+       <text x="630" y="468" text-anchor="middle" font-weight="700">data&lt;Atom&gt;</text>
+       <text x="470" y="500">+ index : index&lt;Atom&gt;</text>
+       <text x="470" y="520">+ predicate : index&lt;Predicate&gt;</text>
+       <text x="470" y="540">+ terms : flat_vector&lt;index&lt;Term&gt;&gt;</text>
+       <text x="470" y="570">+ fields()</text>
+       <text x="470" y="590">+ identifying_members()</text>
+       <text x="470" y="610">+ cista_members()</text>
+       <text x="1070" y="242" text-anchor="middle" font-weight="700" style="fill: var(--color-brand-primary);">index_view&lt;Atom, Store&gt;</text>
+       <text x="910" y="274">- index : index&lt;Atom&gt;</text>
+       <text x="910" y="294">- context : const Store*</text>
+       <text x="910" y="324">+ member&lt;&amp;F&gt;()</text>
+       <text x="1070" y="482" text-anchor="middle" font-weight="700">index&lt;Atom&gt;</text>
+       <text x="910" y="514">+ value : uint32</text>
+       <text x="190" y="242" text-anchor="middle" font-weight="700">borrowed_view&lt;Atom, Store, R&gt;</text>
+       <text x="30" y="274">- record : const R*</text>
+       <text x="30" y="294">- context : const Store*</text>
+       <text x="30" y="324">+ member&lt;&amp;F&gt;()</text>
+       <text x="190" y="450" text-anchor="middle" font-style="italic" font-size="12">«builder»</text>
+       <text x="190" y="468" text-anchor="middle" font-weight="700">builder&lt;Atom, C&gt;</text>
        <text x="30" y="500">+ index : index&lt;Atom&gt;</text>
-       <text x="30" y="520">+ predicate : index&lt;Predicate&gt;</text>
-       <text x="30" y="540">+ terms : flat_vector&lt;index&lt;Term&gt;&gt;</text>
+       <text x="30" y="520">+ predicate : child&lt;Predicate, C&gt;</text>
+       <text x="30" y="540">+ terms : vector&lt;child&lt;Term, C&gt;&gt;</text>
        <text x="30" y="570">+ fields()</text>
        <text x="30" y="590">+ identifying_members()</text>
-       <text x="30" y="610">+ cista_members()</text>
-       <text x="670.0" y="482" text-anchor="middle" font-weight="700">index&lt;Atom&gt;</text>
-       <text x="510" y="514">+ value : uint32</text>
-       <text x="430.0" y="269" text-anchor="middle" font-size="12">context</text>
-       <text x="200.0" y="422" font-size="12">0..*</text>
-       <text x="678.0" y="401.0" font-size="12">index</text>
-       <text x="430.0" y="499.0" text-anchor="middle" font-size="12">index</text>
+       <text x="409" y="277" text-anchor="middle" font-size="12">context</text>
+       <text x="851" y="277" text-anchor="middle" font-size="12">context</text>
+       <text x="640" y="412" font-size="12">0..*</text>
+       <text x="198" y="385" font-size="12">record (R = builder)</text>
+       <text x="372" y="368" font-size="12">record</text>
+       <text x="372" y="383" font-size="12">(R = data)</text>
+       <text x="1078" y="400" font-size="12">index</text>
+       <text x="849" y="499" text-anchor="middle" font-size="12">index</text>
+       <text x="409" y="517" text-anchor="middle" font-size="11">«same fields»</text>
      </g>
-   </svg>
    <figcaption>Running example: the record <code>Atom</code> in UML: the Store owns its records and returns their indices;
-   a view holds an index and the Store (its context) and inherits the field getters of its mixin.</figcaption>
+   a view holds an index and the Store (its context) and inherits the field getters of its mixin. Its builder has the
+   record's fields in another memory organization, each index a child (<code>child&lt;Predicate, C&gt;</code>: an
+   index, or a pooled temporary the child owns: a builder of its own or a record not interned yet); it only mutates. A
+   borrowed view reads a builder, or a record not in the Store (R = data), through the Store with the same mixin; a
+   child reads as the view of the form it holds: an interned one as its index_view, a temporary as its borrowed
+   view. A field of several children is a vector of children, each in its own form.</figcaption>
    </figure>
 
 A value that has no Store of its own, held in records or computed where it is read (a column's label and type, a fact
@@ -317,7 +349,10 @@ the same (``urd::borrowed_view<T, C, Value>``).
   ``ConditionAnd``), as the records of one module need names of their own, and not where each is bound in a module of
   its own (``State<Kind>`` is ``State`` in ``pytyr.planning.ground`` and in ``pytyr.planning.lifted``). ``bind_view`` binds a record's view and a
   builder's view alike (a view of ``builder<T>``, whose ``fields()`` name the fields of ``data<T>``, is
-  ``<Name>Builder``):
+  ``<Name>Builder``; a view that borrows a record ``data<T>`` is ``<Name>Borrowed``, one that owns its record
+  ``<Name>Owned``, one that shares it ``<Name>Shared``, so that the views of one record in one module have names of
+  their own: ``State``, ``StateBorrowed``, ``StateBuilder`` and ``StateBuilderShared``; a builder is only ever read by
+  holding it, so ``Builder`` alone names its borrowed view):
 
   .. list-table::
      :header-rows: 1

@@ -721,13 +721,26 @@ def shape_findings(cursor: ci.Cursor, *, held: bool) -> list[str]:
     return found
 
 
+def first_argument(arguments: str) -> str:
+    """The first of comma-separated template arguments (``T, C`` of builder<T, C>: T)."""
+    depth = 0
+    for position, character in enumerate(arguments):
+        if character == "<":
+            depth += 1
+        elif character == ">":
+            depth -= 1
+        elif character == "," and depth == 0:
+            return arguments[:position].strip()
+    return arguments
+
+
 def mixin_of(cursor: ci.Cursor, file: str) -> Mixin:
     """The mixin `cursor` defines."""
     key = tag_of(cursor.displayname, "view_mixin")
     held = False
     for wrapper in ("data<", "builder<"):
         if key.startswith(wrapper) and key.endswith(">"):
-            key = key[len(wrapper) : -1]
+            key = first_argument(key[len(wrapper) : -1])
             held = True
     children = list(cursor.get_children())
     methods = [each.spelling for each in children if each.kind in FUNCTION_KINDS | {ci.CursorKind.FIELD_DECL}]
@@ -737,7 +750,7 @@ def mixin_of(cursor: ci.Cursor, file: str) -> Mixin:
     qualified_tag = qualified_of(cursor.displayname, "view_mixin")
     for wrapper in ("urd::data<", "data<", "urd::builder<", "builder<"):
         if qualified_tag.startswith(wrapper) and qualified_tag.endswith(">"):
-            qualified_tag = qualified_tag[len(wrapper) : -1]
+            qualified_tag = first_argument(qualified_tag[len(wrapper) : -1])
             break
     parameters = tuple(
         each.spelling
@@ -1094,7 +1107,7 @@ def view_tag(spelling: str) -> str:
         tag = qualified_of(compact[position:], view[len("urd::") : -1])
         for wrapper in ("urd::data<", "urd::builder<"):
             if tag.startswith(wrapper) and tag.endswith(">"):
-                return tag[len(wrapper) : -1]
+                return first_argument(tag[len(wrapper) : -1])
         return tag
     return ""
 
