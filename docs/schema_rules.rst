@@ -94,8 +94,8 @@ ever removed.
        <text x="190" y="450" text-anchor="middle" font-style="italic" font-size="12">«builder»</text>
        <text x="190" y="468" text-anchor="middle" font-weight="700">builder&lt;Atom, C&gt;</text>
        <text x="30" y="500">+ index : index&lt;Atom&gt;</text>
-       <text x="30" y="520">+ predicate : child&lt;Predicate, C&gt;</text>
-       <text x="30" y="540">+ terms : vector&lt;child&lt;Term, C&gt;&gt;</text>
+       <text x="30" y="520" font-size="12">+ predicate : built_t&lt;index&lt;Predicate&gt;, C&gt;</text>
+       <text x="30" y="540" font-size="12">+ terms : built_t&lt;flat_vector&lt;index&lt;Term&gt;&gt;, C&gt;</text>
        <text x="30" y="570">+ fields()</text>
        <text x="30" y="590">+ identifying_members()</text>
        <text x="409" y="277" text-anchor="middle" font-size="12">context</text>
@@ -110,17 +110,17 @@ ever removed.
      </g>
    <figcaption>Running example: the record <code>Atom</code> in UML: the Store owns its records and returns their indices;
    a view holds an index and the Store (its context) and inherits the field getters of its mixin. Its builder has the
-   record's fields in another memory organization, each index a child (<code>child&lt;Predicate, C&gt;</code>: an
-   index, or a pooled temporary the child owns: a builder of its own or a record not interned yet); it only mutates. A
-   borrowed view reads a builder, or a record not in the Store (R = data), through the Store with the same mixin; a
-   child reads as the view of the form it holds: an interned one as its index_view, a temporary as its borrowed
-   view. A field of several children is a vector of children, each in its own form.</figcaption>
+   record's fields, each in its built form (<code>built_t</code>, S2): an index a child (<code>child&lt;Predicate,
+   C&gt;</code>: its index, or a handle that owns a builder of its own or a record not interned yet; no context), a
+   flat vector a <code>std::vector</code> of children, each in its own form; it only mutates. A borrowed view reads a
+   builder, or a record not in the Store (R = data), through the Store with the same mixin; a child reads through that
+   view's context: an index as its index_view, a handle as its record's borrowed view.</figcaption>
    </figure>
 
 A value that has no Store of its own, held in records or computed where it is read (a column's label and type, a fact
-of a state), is no record: it is a plain struct, copyable, with ``cista_members()`` and ``identifying_members()`` and
-compared by them (``urd::compared_by_identity``), as ``ygg::ColumnLayout``. Its views read it as their record type all
-the same (``urd::borrowed_view<T, C, Value>``).
+of a state, a row's key), is a record with no index: ``urd::data<T>`` all the same (``urd::data<ygg::ColumnLayout>``,
+``urd::data<FDRFact<F>>``), by S1 to S4, read through its views as any record (``urd::borrowed_view<T, C>``); see
+Values (S5).
 
 - .. rule:: schema-record-data
   .. rule:: S1
@@ -209,16 +209,122 @@ the same (``urd::borrowed_view<T, C, Value>``).
      }
 
   The ground atoms' record, ``data<lib::formalism::Atom<lib::GroundTag, F>>``, has the same form with its own fields
-  (its row); their views share one mixin or have one each (S2).
+  (its row); their views share one mixin or have one each (S3).
 
-- .. rule:: schema-record-view
+- .. rule:: schema-record-builder
   .. rule:: S2
 
-  :ruleid:`S2` :decidable:`decidable` **A record's view has one** ``get_<field>()`` **per field and may derive more from
+  :ruleid:`S2` :decidable:`decidable`
+  **A record's builder is** ``urd::builder<T, C>``, **with the record's index and fields, each in its built form, and
+  functions that change it.**
+
+  :Name: ``schema-record-builder``
+  :Check: ``python -m pybrokkr.rules S2`` (with the compile database of a configured build)
+
+  A record that is built before it is interned has a builder: a specialization ``urd::builder<T, C>`` of its tag, with
+  the template header of its record and the context type ``C`` it is read through. ``C`` is a type only: no member
+  holds a context. It names a built child's builder (``builder<U, C>``, so that a nested tree shares one ``C``), the
+  context a specialization that needs one names (a stateful ``order_by``, below), and what the builder is interned into
+  and read through (``BuilderStorage<C, ...>``, ``borrowed_view<T, C, builder<T, C>>``). Each specialization has, in
+  this order:
+
+  #. ``urd::index<T> index;``, where its record has one;
+  #. for each field of ``data<T>``, in its order and under its name, ``urd::built_t<M, Context> <field>;``, where ``M``
+     is the field's type as the record declares it and ``Context`` the repository that holds ``M``'s records (``C`` for
+     the record's own). ``built_t`` gives the field's built form: an index of a record its child
+     (``urd::child<T, Context>``: its key, or a handle that owns a builder of its own or a record not interned yet), a
+     ``urd::data<T>`` its builder, urd's
+     flat containers std's (a ``flat_vector`` a ``std::vector``, a ``flat_optional`` a ``std::optional``, ...), and
+     anything else as it is;
+  #. ``fields()``, which names each field as ``data<T>``'s does, by member pointers of the builder;
+  #. ``identifying_members()``, as its record's (``urd::members_of(fields())``);
+  #. public member functions that change it, none ``const`` and none ``static``: a builder is its record's mutable
+     form, read through its view (``urd::borrowed_view<T, C, builder<T, C>>``) and that view's mixin as the record is
+     (S3), so a public read on the builder would be a second place for it. Private member functions are helpers of
+     their own, of any form: no reader reaches them;
+  #. ``functions()``, where it has public member functions: each listed under its Python name, as a mixin lists its
+     functions (``urd::function<"clear", &builder::clear>``), so that what a builder offers in Python is decided where
+     it is (S4).
+
+  A builder declares nothing else: no base, constructor, alias, variable, friend, nor a member that refers to its
+  context. It is made before any repository is known (a builder storage hands it out empty and reuses it, Python makes
+  one from its fields) and is read through whichever context its view is made with: no child holds a context, a key is
+  resolved through the view's, a handle reads as its record. A builder with a field that owns a child is move-only, as
+  the child's built form owns its record by a unique handle (from a pool, or ``urd::make_owned`` on the heap);
+  ``urd::clone`` copies it deeply.
+
+  The builder of the lifted atoms:
+
+  .. code-block:: cpp
+
+     // include/lib/formalism/atom_builder.hpp
+     #include "lib/formalism/atom_data.hpp"
+
+     #include <urd/elements/children.hpp>
+
+     namespace urd
+     {
+     template<lib::formalism::FactKind F, typename C>
+     struct builder<lib::formalism::Atom<lib::LiftedTag, F>, C>
+     {
+         urd::index<lib::formalism::Atom<lib::LiftedTag, F>> index;
+         urd::built_t<urd::index<lib::formalism::Predicate<F>>, C> predicate;
+         urd::built_t<urd::flat_vector<urd::index<lib::formalism::Term>>, C> terms;
+
+         static constexpr auto fields() noexcept
+         {
+             return urd::Fields<urd::field<"predicate", &builder::predicate>, urd::field<"terms", &builder::terms>> {};
+         }
+         static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
+
+         void clear() noexcept { terms.clear(); }
+
+         static constexpr auto functions() noexcept { return urd::Functions<urd::function<"clear", &builder::clear>> {}; }
+     };
+     }
+
+  .. note::
+
+     A field of a type of the library's own whose form in a builder is not that type itself (a packed form, a list of
+     keys a builder keeps sorted) gets its built form by a specialization of ``urd::built_form<M, C>`` beside the type,
+     so that the builder's field is written ``built_t`` as any other. The specialization gives the form, ``type``, and,
+     where it can be made from the record's member alone, ``from`` (no context: a key is a child as it is). A form
+     whose order needs the context names it in a stateful ``order_by``, whose instance the builder's members give the
+     Store (``urd::Store(order)``, as ``std::set(compare)``). A relation's rows, which its record holds as a list of row
+     keys, ordered by their values, which a key names only in its repository:
+
+     .. code-block:: cpp
+
+        /// Tuple order of row children, each read through the context it holds (set by initialize).
+        template<typename F, typename C>
+        struct ygg::RowOrder
+        {
+            using is_transparent = void;
+            const C* context = nullptr;
+            template<typename L, typename R>
+            bool operator()(const L& lhs, const R& rhs) const;
+        };
+
+        /// A relation's rows as its builder holds them: row children, in tuple order and unique (no from: row keys
+        /// alone have no order).
+        template<typename F, typename C>
+        struct urd::built_form<urd::flat_vector<ygg::RowIndex<F>>, C>
+        {
+            using type = urd::Store<urd::multiset<urd::child<ygg::Row<F>, C, ygg::RowIndex<F>>>,
+                                    urd::sorted, urd::unique, urd::order_by<ygg::RowOrder<F, C>>>;
+        };
+
+        // builder<Relation<F>, C>::initialize(repository, pool, columns):
+        //     rows = urd::built_t<urd::flat_vector<ygg::RowIndex<F>>, C>(ygg::RowOrder<F, C> { &repository });
+
+- .. rule:: schema-record-view
+  .. rule:: S3
+
+  :ruleid:`S3` :decidable:`decidable` **A record's view has one** ``get_<field>()`` **per field and may derive more from
   them, never reading** ``record()``.
 
   :Name: ``schema-record-view``
-  :Check: ``python -m pybrokkr.rules S2`` (with the compile database of a configured build)
+  :Check: ``python -m pybrokkr.rules S3`` (with the compile database of a configured build)
 
   A
   record's views (``urd::index_view``, and ``borrowed_view``, ``owning_view``, ``shared_view`` of its ``data<T>`` or
@@ -331,28 +437,52 @@ the same (``urd::borrowed_view<T, C, Value>``).
      };
      }
 
-- .. rule:: schema-record-binding
-  .. rule:: S3
+  .. note::
 
-  :ruleid:`S3` :decidable:`decidable`
-  **A record is bound in Python by two calls,** ``urd::python::bind_data<T>(m)`` **and, for each of its views,**
-  ``urd::python::bind_view<View>(m)``, **and by nothing else.**
+     A field of a type of the library's own (a key of a record that no ``urd::index`` names) tells urd how a view reads
+     it and what it is written from, by a specialization of ``urd::resolution<M>`` beside the type: ``of``, the field
+     resolved through the view's context, which its getter returns; ``stored``, the field written from what reads as it
+     (the key itself, or a view of what it names). A row key:
+
+     .. code-block:: cpp
+
+        /// A row key held in a record resolves to its view, through its context (context.view(key)).
+        template<typename F>
+        struct urd::resolution<ygg::RowIndex<F>>
+        {
+            template<typename C>
+            static auto of(ygg::RowIndex<F> key, const C& context) { return context.view(key); }
+
+            /// Written from the key itself, or from a stored row's view (its index()).
+            template<std::same_as<ygg::RowIndex<F>> R>
+            static ygg::RowIndex<F> stored(const R& readout) noexcept { return readout; }
+
+            template<ygg::StoredRowView<F> V>
+            static ygg::RowIndex<F> stored(const V& view) noexcept { return view.index(); }
+        };
+
+- .. rule:: schema-record-binding
+  .. rule:: S4
+
+  :ruleid:`S4` :decidable:`decidable`
+  **A record is bound in Python by** ``urd::python::bind_index<T>(m)`` **where it holds its index,**
+  ``urd::python::bind_data<T>(m)``, ``urd::python::bind_builder<T, C>(m)`` **for its builder and**
+  ``urd::python::bind_view<View>(m)`` **for each of its views, one class each, and by nothing else.**
 
   :Name: ``schema-record-binding``
-  :Check: ``python -m pybrokkr.rules S3`` (with the compile database of a configured build)
+  :Check: ``python -m pybrokkr.rules S4`` (with the compile database of a configured build)
 
   Nothing else is needed: urd binds a record's fields, its index, comparison, hashing, ``str`` and ``repr``, and its
-  views' field getters and ``functions()`` (S2). They define the classes below, named from the record's
+  views' field getters and ``functions()`` (S3). They define the classes below, named from the record's
   name ``<Name>``, ``urd::name<T>()``: its tag's ``static constexpr std::string_view name``, as the tag declares it, so
   that no binding names a record or a field by hand; each call returns the class it defines. A tag of a family is named
   after its arguments where it says so (``urd::joined_name<"Condition", Tag::name>``: ``Condition<AndTag>`` is
   ``ConditionAnd``), as the records of one module need names of their own, and not where each is bound in a module of
   its own (``State<Kind>`` is ``State`` in ``pytyr.planning.ground`` and in ``pytyr.planning.lifted``). ``bind_view`` binds a record's view and a
-  builder's view alike (a view of ``builder<T>``, whose ``fields()`` name the fields of ``data<T>``, is
-  ``<Name>Builder``; a view that borrows a record ``data<T>`` is ``<Name>Borrowed``, one that owns its record
-  ``<Name>Owned``, one that shares it ``<Name>Shared``, so that the views of one record in one module have names of
-  their own: ``State``, ``StateBorrowed``, ``StateBuilder`` and ``StateBuilderShared``; a builder is only ever read by
-  holding it, so ``Builder`` alone names its borrowed view):
+  builder's view alike: a view that borrows its record is ``<Name>Borrowed``, one that owns it ``<Name>Owned``, one
+  that shares it ``<Name>Shared``, and a view of a builder has ``Builder`` before these, so that the classes of one
+  record in one module have names of their own: ``State``, ``StateBorrowed``, ``StateData``, ``StateBuilder``,
+  ``StateBuilderBorrowed`` and ``StateBuilderShared``. A library binds every builder it defines (``include/``):
 
   .. list-table::
      :header-rows: 1
@@ -361,16 +491,29 @@ the same (``urd::borrowed_view<T, C, Value>``).
      * - Class
        - Members
      * - ``<Name>Index``
-       - ``bind_data``, where the record holds an ``urd::index<T> index``: ``value``, ``is_none()``, ``int()``,
-         comparison and hashing; a view that gives this index converts to it wherever an index is expected
+       - ``bind_index``, ``urd::index<T>``, before ``bind_data`` where the record holds an ``urd::index<T> index``
+         (``bind_data`` throws where it is not bound yet), and for a tag of no record (a column, a slot): ``value``,
+         ``is_none()``, ``int()``, comparison and hashing; a view that gives this index converts to it wherever an
+         index is expected. An index is bound once, by whichever module binds it first; every other names that class.
+         ``bind_index<K>`` of a key of a library's own (a type with ``fields()``, Values) binds the key under its name:
+         an ``__init__`` from its fields, each field read and written, comparison, hashing, ``str`` and ``repr``
      * - ``<Name>Data``
        - ``bind_data``, ``urd::data<T>``: an ``__init__`` from the fields in order, each field read and written under
          its name (flat containers as Python lists and values), comparison by the identifying members, ``str`` and
          ``repr`` by its ``fmt::formatter``
      * - ``<Name>``
-       - ``bind_view``, the view: each ``get_<field>()`` of S2 (of its record's fields), comparison and hashing by its
+       - ``bind_view``, the view: each ``get_<field>()`` of S3 (of its record's fields), comparison and hashing by its
          identity, ``str`` and ``repr`` by its ``fmt::formatter``, ``context()`` (its context, referred to, not
          copied), ``index()`` where it names its index, and the entries of ``functions()``
+     * - ``<Name>Builder``
+       - ``bind_builder``, ``urd::builder<T, C>``: an ``__init__`` that takes each field by its name, every one
+         optional (empty where it is not given), and ``set_<field>(value)`` for each field, neither with a context: a
+         child takes its key (an index, or a view, which converts to it), a builder or a record of its kind (a copy,
+         which the child owns), a list, optional or variant of these element by element, a value as nanobind casts
+         it; the entries of its ``functions()`` (S2), its mutators (their reference arguments kept alive with it);
+         and ``view(context)``, its view through a context (``<Name>BuilderBorrowed``), which every read goes
+         through. A library's repository interns a builder with its children, built ones first
+         (``Repository.insert(builder)``): a whole tree is written as one nested value and interned once
 
   urd writes every value that declares its fields (``fields()``), and a view of a record, with fmt as ``<Name>(``,
   then each field on a line of its own, ``<field>=<value>``, then ``)`` (``urd/format.hpp``): a record and a builder
@@ -390,54 +533,81 @@ the same (``urd::borrowed_view<T, C, Value>``).
   .. code-block:: cpp
 
      // python/src/pylib/formalism/atom.cpp
+     urd::python::bind_index<lib::formalism::Atom>(m);
      urd::python::bind_data<lib::formalism::Atom>(m);
+     urd::python::bind_builder<lib::formalism::Atom, lib::Repository>(m);  // set_predicate, set_terms, clear, view
      urd::python::bind_view<lib::formalism::AtomView>(m);  // get_predicate, get_terms and functions(): is_ground
 
 Values
 ------
 
-A value is a plain struct of fields that no Store holds as a record: a key, a layout, a handle. It has no tag, no index
-and no view, and is copied like any C++ value.
+A value is a record no Store holds: ``urd::data<T>`` of a tag ``T``, with no index. A key (a row's), a layout (a
+column's), a handle (a tree pool's): fields, compared, hashed, written and bound as a record is, by the same rules.
+Builders and views exist to build and resolve children: a value that holds a child (an index of a record: a fact's
+variable) is built by its builder (S2) and read through its view (S3), as a record; so is a value read through its
+context, which says so by declaring a view mixin (a state's storage: its pool's handle names rows in the repository's
+pools). A value with neither (no index, no record's index among its fields, no mixin: a column's label and type, a
+pool's handle; ``urd::PlainValue``) is held, built and read as it is, with no builder, view or bound view of its own.
+
+A key is no value: it names a record (``urd::index<T>``, a row's key ``ygg::RowIndex<F>``, a state's packed storage
+``tyr::planning::PackedStorage<S>``) and reads as what it names, the view its context makes of it. A key of a
+library's own is a plain struct of fields with ``identifying_members()``, a ``urd::resolution`` specialization (it reads
+as what it names) and a ``fmt::formatter``; it is bound by ``urd::python::bind_index<K>(m)``, as an index is. A
+builder holds a key as it is, unless its library gives the key's built form (``urd::built_form``): a packed storage is
+built as its storage unpacked. Only its pool packs and unpacks it, so that form has no ``from()``, and nothing that
+holds it is made from a record (``urd::made_from_record``): its builder's setter takes no record of its kind, only a
+builder.
 
 - .. rule:: schema-value
-  .. rule:: S4
+  .. rule:: S5
 
-  :ruleid:`S4` :decidable:`decidable`
-  **A value declares** ``name``, ``fields()`` **and** ``identifying_members()``, **and is bound in Python by**
-  ``urd::python::bind_value<T>(m)`` **alone.**
+  :ruleid:`S5` :decidable:`decidable`
+  **A type that declares** ``fields()`` **and** ``identifying_members()`` **is a** ``urd::data<T>``
+  **specialization, or a key.**
 
   :Name: ``schema-value``
-  :Check: ``python -m pybrokkr.rules S4`` (with the compile database of a configured build)
+  :Check: ``python -m pybrokkr.rules S5`` (with the compile database of a configured build)
 
-  Every struct or class template with a static ``fields()`` that is no record is a value, nested in a class or not.
-  ``fields()`` lists its data members as a record's does, each once under its name and in order,
-  ``identifying_members()`` those it is compared and hashed by, and ``static constexpr std::string_view name`` the name
-  it is written and bound under. A value a record stores also declares ``cista_members()``, which cista requires there, so the
-  build checks it. ``bind_value`` binds its constructor from its fields, each field read and written under its name,
-  comparison by its identifying members, and ``str`` and ``repr`` by urd's formatter; a library's value (under
-  ``include/``) is bound where the library has bindings (``python/src``), and a class of it bound by hand (``nb::class_<T>``), or a ``.def`` on the class
-  ``bind_value`` returns, is a finding.
+  Every struct or class template with a static ``fields()`` and ``identifying_members()`` is a record, one with an index
+  held by a Store, one without a value, both following S1 to S4 (a value has no ``index``, so ``bind_index`` binds
+  none); or a key, one ``urd::resolution`` reads (a specialization of it for the type, wherever it is written). A type with ``fields()`` alone (and ``name``) is printable, not a value: urd's formatter writes it, and nothing
+  else is asked of it. A class with behaviour (private state, member functions) compared by ``identifying_members()``
+  declares no ``fields()``; it is written by a ``fmt::formatter`` of its own.
 
   .. code-block:: cpp
 
-     // include/lib/formalism/row_index.hpp
+     // include/lib/formalism/declarations.hpp
      template<typename F>
      struct RowIndex
      {
-         static constexpr std::string_view name = "RowIndex";
+         static constexpr std::string_view name = urd::joined_name<"RowIndex", F::name>;
+     };
 
+     template<typename F>
+     struct urd::data<lib::formalism::RowIndex<F>>
+     {
          urd::index<F> relation;
-         urd::index<Row<F>> row;
+         urd::index<lib::formalism::Row<F>> row;
 
-         static constexpr auto fields() noexcept { return urd::Fields<urd::field<"relation", &RowIndex::relation>, urd::field<"row", &RowIndex::row>> {}; }
+         data() = default;
+         data(urd::index<F> relation_, urd::index<lib::formalism::Row<F>> row_) : relation(relation_), row(row_) {}
+
+         static constexpr bool copyable() noexcept
+         {
+             static_assert(std::is_trivially_copyable_v<data>, "a copyable record is trivially copyable");
+             return true;
+         }
+
+         static constexpr auto fields() noexcept { return urd::Fields<urd::field<"relation", &data::relation>, urd::field<"row", &data::row>> {}; }
          static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
+         static constexpr auto cista_members() noexcept { return urd::Members<&data::relation, &data::row> {}; }
      };
 
      // python/src/pylib/formalism/row_index.cpp
-     urd::python::bind_value<lib::formalism::RowIndex<lib::formalism::Predicate>>(m);
+     urd::python::bind_data<lib::formalism::RowIndex<lib::formalism::Predicate>>(m);  // RowIndexPredicateData
 
 Status
 ------
 
-``python -m pybrokkr.rules S`` checks the four rules on every tracked file, tests included; what it reports is where a
+``python -m pybrokkr.rules S`` checks the five rules on every tracked file, tests included; what it reports is where a
 library does not follow them yet. A file it cannot parse is a finding, not a skip.

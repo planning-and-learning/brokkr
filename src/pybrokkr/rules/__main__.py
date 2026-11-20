@@ -69,9 +69,10 @@ RULES: dict[str, Rule] = {
     ),
     "I4": Rule("include-no-cycles", "decidable", lambda repository, _: cycles.check(repository)),
     "S1": Rule("schema-record-data", "decidable", _schema_rule("S1"), "compile commands"),
-    "S2": Rule("schema-record-view", "decidable", _schema_rule("S2"), "compile commands"),
-    "S3": Rule("schema-record-binding", "decidable", _schema_rule("S3"), "compile commands"),
-    "S4": Rule("schema-value", "decidable", _schema_rule("S4"), "compile commands"),
+    "S2": Rule("schema-record-builder", "decidable", _schema_rule("S2"), "compile commands"),
+    "S3": Rule("schema-record-view", "decidable", _schema_rule("S3"), "compile commands"),
+    "S4": Rule("schema-record-binding", "decidable", _schema_rule("S4"), "compile commands"),
+    "S5": Rule("schema-value", "decidable", _schema_rule("S5"), "compile commands"),
 }
 
 

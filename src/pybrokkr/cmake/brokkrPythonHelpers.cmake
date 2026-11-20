@@ -14,10 +14,10 @@ cmake_policy(PUSH)
 cmake_policy(SET CMP0057 NEW)  # IN_LIST operator
 
 # brokkr_find_python_native_prefix(<python_package> <out_prefix_var>)
-#   - If <out_prefix_var> is already set (manual override), only ensures it is
-#     on CMAKE_PREFIX_PATH.
-#   - Otherwise queries the package for its cmake_prefix() (native_prefix() on
-#     older releases) and prepends it to CMAKE_PREFIX_PATH.
+#   Puts the prefix of a pip-installed provider package on CMAKE_PREFIX_PATH, where every find_package looks (PATHS
+#   ${CMAKE_PREFIX_PATH} NO_DEFAULT_PATH): the one given as <out_prefix_var> (an override), else the one its package
+#   names (<python_package>.cmake_prefix()), asked of the configuring Python, Python_EXECUTABLE. Nothing is guessed:
+#   no Python given, or one without the package, is an error that names them.
 function(brokkr_find_python_native_prefix python_package out_prefix_var)
     if(${out_prefix_var})
         if(NOT "${${out_prefix_var}}" IN_LIST CMAKE_PREFIX_PATH)
@@ -27,30 +27,27 @@ function(brokkr_find_python_native_prefix python_package out_prefix_var)
         return()
     endif()
 
-    if(NOT Python_EXECUTABLE AND Python3_EXECUTABLE)
-        set(Python_EXECUTABLE "${Python3_EXECUTABLE}")
-    endif()
-
-    find_package(Python 3.11 QUIET COMPONENTS Interpreter)
-    if(NOT Python_Interpreter_FOUND)
-        return()
+    if(NOT Python_EXECUTABLE)
+        message(FATAL_ERROR "brokkr_find_python_native_prefix(${python_package}): no Python_EXECUTABLE: configure with "
+                            "-DPython_EXECUTABLE=<venv>/bin/python of a venv that has ${python_package}.")
     endif()
 
     execute_process(
-        COMMAND "${Python_EXECUTABLE}" -c
-            "import ${python_package} as m; print(getattr(m, 'cmake_prefix', m.native_prefix)())"
+        COMMAND "${Python_EXECUTABLE}" -c "import ${python_package}; print(${python_package}.cmake_prefix())"
         RESULT_VARIABLE native_result
         OUTPUT_VARIABLE native_prefix
-        ERROR_QUIET
+        ERROR_VARIABLE native_error
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-
-    if(native_result EQUAL 0 AND EXISTS "${native_prefix}")
-        list(PREPEND CMAKE_PREFIX_PATH "${native_prefix}")
-        set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH}" PARENT_SCOPE)
-        set(${out_prefix_var} "${native_prefix}" PARENT_SCOPE)
-        message(STATUS "Found ${python_package} native prefix: ${native_prefix}")
+    if(NOT native_result EQUAL 0 OR NOT EXISTS "${native_prefix}")
+        message(FATAL_ERROR "brokkr_find_python_native_prefix(${python_package}): ${Python_EXECUTABLE} names no prefix of "
+                            "${python_package}: ${native_error}")
     endif()
+
+    list(PREPEND CMAKE_PREFIX_PATH "${native_prefix}")
+    set(CMAKE_PREFIX_PATH "${CMAKE_PREFIX_PATH}" PARENT_SCOPE)
+    set(${out_prefix_var} "${native_prefix}" PARENT_SCOPE)
+    message(STATUS "Found ${python_package} prefix: ${native_prefix}")
 endfunction()
 
 function(brokkr_register_native_dependency_prefix native_prefix)

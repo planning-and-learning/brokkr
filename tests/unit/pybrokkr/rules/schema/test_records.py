@@ -1,6 +1,6 @@
 # Copyright (C) 2026 Dominik Drexler
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""pybrokkr.rules.schema.records on a small library: a record that follows S1-S3, and one that breaks each."""
+"""pybrokkr.rules.schema.records on a small library: a record that follows S1-S5, and one that breaks each."""
 
 import json
 import shutil
@@ -93,6 +93,7 @@ LOOSE_DATA = """#pragma once
 #include <string>
 namespace urd {
 template<> struct data<lib::Loose> {
+    urd::index<lib::Loose> index;
     std::string name;
     data() = default;
     data(const data&) = delete;
@@ -100,6 +101,30 @@ template<> struct data<lib::Loose> {
 };
 }
 namespace lib { inline int helper() { return 0; } }
+"""
+# A value with no children (urd::PlainValue): no index, no record's index among its fields; no view of its own (S3, S4).
+PLAIN_DATA = """#pragma once
+#include <string_view>
+#include <type_traits>
+#include <urd/elements/flat.hpp>
+namespace lib { struct Span { static constexpr std::string_view name = "Span"; }; }
+namespace urd {
+template<> struct data<lib::Span> {
+    int first = 0;
+    int last = 0;
+    data() = default;
+    data(int first_, int last_) : first(first_), last(last_) {}
+    static constexpr bool copyable() noexcept
+    {
+        static_assert(std::is_trivially_copyable_v<data>, "a copyable record is trivially copyable");
+        return true;
+    }
+    static constexpr auto fields() noexcept
+    { return urd::Fields<urd::field<"first", &data::first>, urd::field<"last", &data::last>> {}; }
+    static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
+    static constexpr auto cista_members() noexcept { return urd::Members<&data::first, &data::last> {}; }
+};
+}
 """
 WEIGHT = "#pragma once\nnamespace lib { enum class Weight : int {}; }\n"
 # A copyable record: trivially copyable, it declares copyable() instead of the five.
@@ -168,7 +193,7 @@ template<> struct data<lib::Term> {
 };
 }
 """
-# A view that reads the record's stored form: S2 forbids record() in a mixin.
+# A view that reads the record's stored form: S3 forbids record() in a mixin.
 TERM_VIEW = """#pragma once
 #include "lib/term_data.hpp"
 namespace urd {
@@ -193,7 +218,7 @@ template<typename V> struct view_mixin<urd::data<lib::Local>, V> {
 };
 }
 """
-# A binding source: Atom's data and views bound, and what S3 and S4 forbid besides: classes bound by hand, .def on a
+# A binding source: Atom's data and views bound, and what S4 and S5 forbid besides: classes bound by hand, .def on a
 # bound class (chained, through a variable, through a helper), a module function over a view.
 BINDING = """#include "lib/atom_data.hpp"
 #include "lib/object_data.hpp"
@@ -211,6 +236,7 @@ template<typename T> struct class_ {
 }
 namespace urd::python {
 // urd's own binders bind by hand by design: no finding in them
+template<typename T> void bind_index(int) {}
 template<typename T> nanobind::class_<urd::data<T>> bind_data(int) { return nanobind::class_<urd::data<T>>(0); }
 template<typename V> nanobind::class_<V> bind_view(int) { return nanobind::class_<V>(0); }
 template<typename T> nanobind::class_<T> bind_value(int) { return nanobind::class_<T>(0); }
@@ -219,6 +245,8 @@ using AtomView = urd::index_view<lib::Atom, int>;
 using ObjectView = urd::index_view<lib::Object, int>;
 inline nanobind::class_<AtomView> bind_atom_view() { return urd::python::bind_view<AtomView>(0); }
 void bind_derived(nanobind::module_& m) {
+    urd::python::bind_index<lib::Atom>(0);
+    urd::python::bind_index<lib::Object>(0);
     auto held = urd::python::bind_data<lib::Atom>(0);  // a variable holding the bound class: no hand binding
     urd::python::bind_data<lib::Atom>(0);  // the class bind_data returns, unnamed: no hand binding
     urd::python::bind_data<lib::Object>(0);  // a record named by an alias
@@ -253,6 +281,8 @@ template<typename T> void bind_other() { auto other = nanobind::class_<T>(0); } 
 // A helper over its view: it binds what its callers pass
 template<typename V> void bind_view_of() { urd::python::bind_view<V>(0); }
 void bind_term() {
+    urd::python::bind_index<lib::Term>(0);
+    urd::python::bind_index<lib::Shuffled>(0);
     urd::python::bind_data<lib::Term>(0);
     bind_view_of<urd::index_view<lib::Term, int>>();
     urd::python::bind_data<lib::Shuffled>(0);
@@ -260,8 +290,8 @@ void bind_term() {
 // A generic helper over a bare parameter binds no record of its own
 template<typename T> void bind_any_view() { urd::python::bind_view<ViewOf<T>>(0); }
 """
-# Values (S4): Key follows it; Unbound is not bound; Nameless has no name and no identifying_members(); Inner, nested,
-# declares fields() without auto.
+# Values (S5): Key follows it; Unbound is not bound; Nameless has no name; Inner, nested, declares fields() without
+# auto; Printable has a name and fields() but no identifying_members(): printable, no value.
 VALUES = """#pragma once
 #include <string_view>
 #include <urd/elements/flat.hpp>
@@ -283,6 +313,20 @@ struct Unbound {
 struct Nameless {
     int count;
     static constexpr auto fields() noexcept { return urd::Fields<urd::field<"count", &Nameless::count>> {}; }
+    static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
+};
+struct RowKey {
+    static constexpr std::string_view name = "RowKey";
+    int relation;
+    int row;
+    static constexpr auto fields() noexcept
+    { return urd::Fields<urd::field<"relation", &RowKey::relation>, urd::field<"row", &RowKey::row>> {}; }
+    static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
+};
+struct Printable {
+    static constexpr std::string_view name = "Printable";
+    int m_count;
+    static constexpr auto fields() noexcept { return urd::Fields<urd::field<"count", &Printable::m_count>> {}; }
 };
 struct Outer {
     struct Inner {
@@ -293,8 +337,11 @@ struct Outer {
     };
 };
 }
+// A key reads as what it names: a resolution of its own.
+namespace urd { template<typename M> struct resolution; }
+template<> struct urd::resolution<lib::RowKey> {};
 """
-# A record of S1's form, and a mixin that breaks S2 in every way it can: a base, a public self(), members that are no
+# A record of S1's form, and a mixin that breaks S3 in every way it can: a base, a public self(), members that are no
 # functions, record() read through a variable, a deduced member template and an overload not listed, a member listed
 # only in a comment, a forwarder, a member after functions(). Its held form's mixin reads record() and lists nothing.
 # Free functions listed: one forwards, one reads record().
@@ -421,6 +468,7 @@ def library(root: Path) -> tuple[Path, Path]:
         "include/lib/atom_view.hpp": ATOM_VIEW,
         "include/lib/loose_data.hpp": LOOSE_DATA,
         "include/lib/weight.hpp": WEIGHT,
+        "include/lib/span_data.hpp": PLAIN_DATA,
         "include/lib/cost_data.hpp": COST_DATA,
         "include/lib/object_data.hpp": ALIAS_DATA,
         "include/lib/term_data.hpp": TERM_DATA,
@@ -469,8 +517,11 @@ def test_a_record_that_breaks_each_schema(tmp_path: Path) -> None:
     assert "data<Loose> has 1 constructors, not data() = default and one from the 1 fields" in loose["S1"]
     assert any(each.startswith("data<Loose> declares ['copy constructor deleted'], neither") for each in loose["S1"])
     assert any("has the functions ['cista_members']" in each for each in loose["S1"])
-    assert loose["S2"] == {"Loose: has no urd::view_mixin<Loose, V>"}
-    assert loose["S3"] == {"Loose is not bound with urd::python::bind_data"}
+    assert loose["S3"] == {"Loose: has no urd::view_mixin<Loose, V>"}
+    assert loose["S4"] == {
+        "Loose is not bound with urd::python::bind_data",
+        "Loose holds its index, not bound with urd::python::bind_index",
+    }
 
 
 def test_a_record_with_one_field_follows_s1(tmp_path: Path) -> None:
@@ -573,7 +624,7 @@ def test_records_of_one_tag_are_paired_with_the_mixin_of_their_shape(tmp_path: P
     assert git is not None
     subprocess.run([git, "-C", str(root), "add", "."], check=True)
     found = check(root, database)
-    assert not [each for rule in ("S1", "S2") for each in found[rule] if "shape_data" in each.path]
+    assert not [each for rule in ("S1", "S3") for each in found[rule] if "shape_data" in each.path]
 
 
 # One name in two namespaces: each record is paired with the mixin of its own namespace.
@@ -639,18 +690,18 @@ def test_records_of_one_name_in_two_namespaces_are_paired_with_their_own_mixins(
     assert git is not None
     subprocess.run([git, "-C", str(root), "add", "."], check=True)
     found = check(root, database)
-    assert not [each for rule in ("S1", "S2") for each in found[rule] if "namesake_data" in each.path]
+    assert not [each for rule in ("S1", "S3") for each in found[rule] if "namesake_data" in each.path]
 
 
 def test_a_view_may_derive_more_but_not_read_data(tmp_path: Path) -> None:
-    found = check(*library(tmp_path))["S2"]
+    found = check(*library(tmp_path))["S3"]
     assert not [each for each in found if "atom_data" in each.path]
     assert any(each.rule == "lib::Term: reads record() of its view 1 times, not through member<>" for each in found)
 
 
 def probe_findings(tmp_path: Path) -> set[str]:
-    """What S2 reports of the probe mixins and the free functions they list."""
-    return {each.rule for each in check(*library(tmp_path))["S2"] if "probe_view" in each.path}
+    """What S3 reports of the probe mixins and the free functions they list."""
+    return {each.rule for each in check(*library(tmp_path))["S3"] if "probe_view" in each.path}
 
 
 def test_a_mixin_declares_member_functions_alone_without_a_base(tmp_path: Path) -> None:
@@ -704,17 +755,17 @@ def test_a_record_has_its_blocks_in_order(tmp_path: Path) -> None:
     assert "data<Shuffled> declares the index (index) after fields()" in found
 
 
-def test_values_follow_s4(tmp_path: Path) -> None:
-    found = {(each.path.split(":")[0], each.rule) for each in check(*library(tmp_path))["S4"]}
-    rules = {rule for _, rule in found}
-    assert not any("lib::Key " in rule and "bound by" not in rule for rule in rules)
-    assert "value lib::Unbound is not bound with urd::python::bind_value" in rules
-    assert "value lib::Nameless has no static std::string_view name" in rules
-    assert "value lib::Nameless has no identifying_members()" in rules
-    assert "value lib::Outer::Inner is not bound with urd::python::bind_value" in rules  # nested, fields() without auto
-    assert ("python/src/pylib/module.cpp", "value lib::Key is bound by hand, not by bind_value") in found
-    assert ("python/src/pylib/module.cpp", "def on a value's class: bind_value binds a value alone") in found
-    assert not any(rule == "value lib::Key is not bound with urd::python::bind_value" for rule in rules)
+def test_a_value_is_a_record(tmp_path: Path) -> None:
+    rules = {each.rule for each in check(*library(tmp_path))["S5"]}
+    record = (
+        "is no urd::data<T>: a type that declares fields() and identifying_members() is a record, or a key"
+        " urd::resolution reads"
+    )
+    assert f"value lib::Key {record}" in rules
+    assert f"value lib::Outer::Inner {record}" in rules  # nested, fields() without auto
+    assert not any("Printable" in rule for rule in rules)  # printable (name, fields()), no value
+    assert not any("RowKey" in rule for rule in rules)  # a key: urd::resolution reads it as what it names
+    assert not any("bind_value" in rule for rule in rules)
 
 
 def test_a_trivially_copyable_record_declares_copyable(tmp_path: Path) -> None:
@@ -724,11 +775,11 @@ def test_a_trivially_copyable_record_declares_copyable(tmp_path: Path) -> None:
 def test_records_and_mixins_in_sources_are_checked(tmp_path: Path) -> None:
     found = check(*library(tmp_path))
     assert any(each.path.startswith("tests/unit/local.cpp") and "constructors" in each.rule for each in found["S1"])
-    assert any(each.path.startswith("tests/unit/local.cpp") and "reads record()" in each.rule for each in found["S2"])
+    assert any(each.path.startswith("tests/unit/local.cpp") and "reads record()" in each.rule for each in found["S3"])
 
 
 def test_a_record_bound_by_hand_is_reported(tmp_path: Path) -> None:
-    found = check(*library(tmp_path))["S3"]
+    found = check(*library(tmp_path))["S4"]
     assert any(each.path.startswith("python/src/pylib/module.cpp") and "bound by hand" in each.rule for each in found)
     assert not any("Atom is not bound" in each.rule for each in found)  # by bind_derived's bind_data call
 
@@ -737,18 +788,18 @@ def test_a_bound_class_held_or_unnamed_is_no_hand_binding(tmp_path: Path) -> Non
     lines = BINDING.splitlines()
     at = [number for number, line in enumerate(lines, 1) if "bind_data<lib::Atom>(0)" in line]
     assert len(at) == 2
-    found = {each.path for each in check(*library(tmp_path))["S3"]}
+    found = {each.path for each in check(*library(tmp_path))["S4"]}
     assert not any(f"python/src/pylib/module.cpp:{line}" in found for line in at)
 
 
 def test_a_record_bound_by_hand_in_a_template_is_reported(tmp_path: Path) -> None:
-    found = check(*library(tmp_path))["S3"]
-    assert any(each.rule.startswith("*: its data or view is bound by hand") for each in found)
+    found = check(*library(tmp_path))["S4"]
+    assert any(each.rule.startswith("*: its data, builder or view is bound by hand") for each in found)
     assert not any("Local is not bound" in each.rule for each in found)  # a test's own record
 
 
 def test_a_unity_built_binding_source_parses_with_its_unity_source_flags(tmp_path: Path) -> None:
-    found = check(*library(tmp_path))["S3"]
+    found = check(*library(tmp_path))["S4"]
     assert not any("does not parse" in each.rule for each in found)
     assert any(each.path.startswith("python/src/pylib/module.cpp:") for each in found)
 
@@ -759,7 +810,7 @@ def test_a_binding_source_not_in_the_compile_database_is_reported(tmp_path: Path
     git = shutil.which("git")
     assert git is not None
     subprocess.run([git, "-C", str(root), "add", "."], check=True)
-    found = check(root, database)["S3"]
+    found = check(root, database)["S4"]
     loose = [each.rule for each in found if each.path == "python/src/pylib/loose.cpp"]
     assert any("not in the compile database" in each for each in loose)
 
@@ -768,7 +819,7 @@ def test_a_binding_source_that_does_not_parse_is_reported(tmp_path: Path) -> Non
     root, database = library(tmp_path)
     broken = BINDING + "void broken() { urd::python::init_from_views<int>(); }\n"
     (root / "python/src/pylib/module.cpp").write_text(broken)
-    found = check(root, database)["S3"]
+    found = check(root, database)["S4"]
     assert any(each.path == "python/src/pylib/module.cpp" and each.rule.startswith("does not parse:") for each in found)
 
 
@@ -776,8 +827,8 @@ def test_a_record_bound_by_hand_through_an_alias_in_a_template_is_reported(tmp_p
     lines = BINDING.splitlines()
     marks = ("auto aliased_data", "nanobind::class_<V>(0).def", "auto other")
     at = [next(number for number, line in enumerate(lines, 1) if mark in line) for mark in marks]
-    hand = "*: its data or view is bound by hand"
-    found = {each.path for each in check(*library(tmp_path))["S3"] if each.rule.startswith(hand)}
+    hand = "*: its data, builder or view is bound by hand"
+    found = {each.path for each in check(*library(tmp_path))["S4"] if each.rule.startswith(hand)}
     assert f"python/src/pylib/module.cpp:{at[0]}" in found  # using V = urd::data<T>
     assert f"python/src/pylib/module.cpp:{at[1]}" in found  # using V = ViewOf<T>, an alias template of urd::index_view
     assert f"python/src/pylib/module.cpp:{at[2]}" not in found  # class_<T>: no record's class
@@ -794,7 +845,7 @@ def test_a_bound_class_gets_no_def_however_it_is_reached(tmp_path: Path) -> None
         'm.def("search"',
     )
     at = [next(number for number, line in enumerate(lines, 1) if mark in line) for mark in marks]
-    found = {each.path: each.rule for each in check(*library(tmp_path))["S3"]}
+    found = {each.path: each.rule for each in check(*library(tmp_path))["S4"]}
     for line in at[:3]:
         assert (
             found[f"python/src/pylib/module.cpp:{line}"]
@@ -806,29 +857,30 @@ def test_a_bound_class_gets_no_def_however_it_is_reached(tmp_path: Path) -> None
 
 
 def test_comments_and_inactive_code_bind_nothing(tmp_path: Path) -> None:
-    found = check(*library(tmp_path))["S3"]
+    found = check(*library(tmp_path))["S4"]
     assert any(each.rule == "Loose is not bound with urd::python::bind_data" for each in found)
 
 
 def test_urd_own_binders_are_no_hand_binding(tmp_path: Path) -> None:
     lines = BINDING.splitlines()
     at = {number for number, line in enumerate(lines, 1) if "nanobind::class_<urd::data<T>>(0); }" in line}
-    found = {each.path for each in check(*library(tmp_path))["S3"]}
+    found = {each.path for each in check(*library(tmp_path))["S4"]}
     assert not any(f"python/src/pylib/module.cpp:{line}" in found for line in at)
 
 
 def test_a_record_needs_a_bound_view(tmp_path: Path) -> None:
-    found = {each.rule for each in check(*library(tmp_path))["S3"]}
+    found = {each.rule for each in check(*library(tmp_path))["S4"]}
     assert "Term has no view bound with urd::python::bind_view" not in found  # through a helper over its view
     # bind_any_view<T> binds no Shuffled: a bare parameter names no tag
     assert "Shuffled has no view bound with urd::python::bind_view" in found
     assert "Cost has no view bound with urd::python::bind_view" not in found  # Cost is not bound at all
     assert "Cost is not bound with urd::python::bind_data" in found
+    assert "Cost holds its index, not bound with urd::python::bind_index" in found
     assert not any(each.startswith(("Atom ", "Object ")) for each in found)
 
 
 def test_a_record_named_by_an_alias_is_bound_by_the_alias(tmp_path: Path) -> None:
-    found = check(*library(tmp_path))["S3"]
+    found = check(*library(tmp_path))["S4"]
     assert not any("Object is not bound" in each.rule for each in found)
 
 
@@ -856,6 +908,95 @@ def test_a_family_is_bound_by_a_member() -> None:
     ],
 )
 def test_forwarding(name: str, body: str, forwards: bool) -> None:
-    """A member that only forwards (its name at the chain's end, or one call on the view) is S2's; others are not."""
+    """A member that only forwards (its name at the chain's end, or one call on the view) is S3's; others are not."""
     words = ["auto", name, "(", ")", "const", "{", *body.split(), "}"]
     assert bool(forwarding(name, words)) == forwards
+
+
+BUILDER_PRELUDE = """#pragma once
+#include "lib/atom_data.hpp"
+namespace urd {
+template<typename T, typename C> struct builder;
+template<typename M, typename C> using built_t = M;
+"""
+
+
+def with_builder(root: Path, body: str) -> None:
+    """Adds the builder of the fixture's Atom record, `body` its members, to the library at `root`."""
+    path = root / "include/lib/atom_builder.hpp"
+    path.write_text(f"{BUILDER_PRELUDE}template<typename C> struct builder<lib::Atom, C> {{\n{body}\n}};\n}}\n")
+    git = shutil.which("git")
+    assert git is not None
+    subprocess.run([git, "-C", str(root), "add", "."], check=True)
+
+
+def test_a_builder_that_follows_s2_has_no_findings(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    with_builder(
+        root,
+        """    urd::index<lib::Atom> index;
+    urd::built_t<urd::index<lib::Predicate>, C> predicate;
+    urd::built_t<urd::flat_vector<std::uint32_t>, C> objects;
+    void clear() {}
+    static constexpr auto fields() noexcept
+    { return urd::Fields<urd::field<"predicate", &builder::predicate>, urd::field<"objects", &builder::objects>> {}; }
+    static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
+    template<typename V> void add(V value) {}
+    static constexpr auto functions() noexcept
+    {
+        return urd::Functions<urd::function<"clear", &builder::clear>,
+                              urd::function<"add", &builder::template add<int>>> {};
+    }
+private:
+    bool empty() const { return true; }
+    static int helper() { return 0; }""",
+    )
+    assert not [each for each in check(root, database)["S2"] if "atom_builder" in each.path]
+
+
+def test_a_builder_that_breaks_s2(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    with_builder(
+        root,
+        """    using Objects = urd::flat_vector<std::uint32_t>;
+    urd::index<lib::Atom> index;
+    urd::built_t<urd::index<lib::Term>, C> predicate;
+    urd::flat_vector<std::uint32_t> objects;
+    bool empty() const { return true; }
+    static int helper() { return 0; }
+    void reset() {}
+    static constexpr auto fields() noexcept
+    { return urd::Fields<urd::field<"predicate", &builder::predicate>, urd::field<"objects", &builder::objects>> {}; }
+    static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }""",
+    )
+    found = {each.rule for each in check(root, database)["S2"] if "atom_builder" in each.path}
+    builder = "builder<lib::Atom>"
+    assert f"{builder} declares type_alias_decl Objects" in found
+    assert any(each.startswith(f"{builder} has the field objects of type urd::flat_vector<") for each in found)
+    assert f"{builder} declares the const function empty: a read is its view's (its mixin's)" in found
+    assert f"{builder} declares the static function helper" in found
+    assert f"{builder} does not list its mutator reset in functions(): Python offers what it lists" in found
+    assert (
+        f"{builder} builds predicate from urd::index<lib::Term>, not its record's urd::index<lib::Predicate>" in found
+    )
+
+
+def test_a_builder_not_bound_with_bind_builder_is_reported(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    with_builder(
+        root,
+        """    urd::index<lib::Atom> index;
+    urd::built_t<urd::index<lib::Predicate>, C> predicate;
+    urd::built_t<urd::flat_vector<std::uint32_t>, C> objects;
+    static constexpr auto fields() noexcept
+    { return urd::Fields<urd::field<"predicate", &builder::predicate>, urd::field<"objects", &builder::objects>> {}; }
+    static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }""",
+    )
+    found = [each.rule for each in check(root, database)["S4"] if "atom_builder" in each.path]
+    assert any(each.endswith("is not bound with urd::python::bind_builder") for each in found), found
+
+
+def test_a_value_with_no_children_has_no_view_of_its_own(tmp_path: Path) -> None:
+    found = check(*library(tmp_path))
+    span = {each.rule for rule in ("S3", "S4") for each in found[rule] if "span_data" in each.path}
+    assert not any("view" in each for each in span), span
