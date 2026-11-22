@@ -309,10 +309,11 @@ from its builder or its ``urd::data<T>``.
 
      **A built form of the library's own.** A field whose form in a builder is not its own type (a packed form, a list
      a builder keeps sorted) gets that form by a specialization ``urd::built_form<M, C>`` beside the type, so that the
-     builder's field is still written ``built_t``. It gives ``type``, the form, and ``from``, where the form can be made
-     from the record's member alone. A form whose order needs the context takes a stateful ``urd::order_by``, given to
-     its Store as ``std::set`` takes its comparison: a relation's rows, kept sorted and unique by their values, which
-     only the repository can read.
+     builder's field is still written ``built_t``. It gives ``type``, the form, and ``assign(value, into)``, where the
+     form can be made from the record's member alone: written into the builder's own value, in place, so that nothing
+     is allocated once its buffers have grown. A form whose order needs the context takes a stateful
+     ``urd::order_by``, given to its Store as ``std::set`` takes its comparison: a relation's rows, kept sorted and
+     unique by their values, which only the repository can read.
 
 - .. rule:: schema-record-view
   .. rule:: S3
