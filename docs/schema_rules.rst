@@ -462,6 +462,27 @@ record from its builder or its ``urd::data<T>``.
 
   .. note::
 
+     **Serialization.** A record is serialized (``pyyggdrasil.serialization``) by all its ``fields()``, in order, under
+     their names, through a view of any form (index, borrowed, owning, shared) or held as it is: no record leaves a
+     field out, the caller selects per table (``register_table(type, name, prefix, fields=..., project=...)``). A type
+     that is no record declares ``describe_fields`` beside it (a search's plan, a task), or ``serialize_as`` where it is
+     written as another (a packed state as its unpacked state). Each module directory of the bindings binds the
+     serialization hooks of the types it binds, in one call ``ygg::python::bind_serialization(types)`` at the end of its
+     ``bind_module_definitions``, and the conversions of the repository it binds (``URD_PYTHON_CONVERSIONS``) in its
+     ``conversions.hpp`` and ``conversions.cpp``: no ``serialization`` or ``conversions`` directory, and nothing at the
+     package's root but its module.
+
+     .. code-block:: cpp
+
+        // python/src/pylib/formalism/serialization.cpp
+        void bind_serialization()
+        {
+            ygg::python::bind_serialization(boost::mp11::mp_append<ygg::python::index_views<Repository, RepositoryTypes>,
+                                                                   boost::mp11::mp_list<Plan, Task>> {});
+        }
+
+  .. note::
+
      **Names of a family.** A tag of a family is named after its arguments where the records of one module need names
      of their own (``urd::joined_name<"Atom", Tag::name>``), and not where each is bound in a module of its own.
 
@@ -472,6 +493,11 @@ A value is a record no Store holds: ``urd::data<T>`` with no index, compared, ha
 by S1 to S4. A value that holds a child (an index of a record) is built by its builder and read through its views, as a
 record. A value with neither an index nor a child (two numbers, a label: ``urd::PlainValue``) is held, built and read as
 it is, with no builder or view of its own.
+
+A value is written in place, field by field: into a builder, into a record and from a record read in its stored form,
+a flat vector by ``set`` (its buffer kept), so that a value holding buffers (a plan's columns) is never copied whole;
+not being trivially copyable, it deletes its copy (S1), and Python reads its fields in place and writes clones
+(``urd::clone``).
 
 - .. rule:: schema-value
   .. rule:: S5
