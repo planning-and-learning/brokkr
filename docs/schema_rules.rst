@@ -115,7 +115,7 @@ The goal differs, and with it the design:
        <text x="470" y="360">+ operator[](index&lt;Atom&gt;) : stored_ref&lt;Atom&gt;</text>
        <text x="630" y="450" text-anchor="middle" font-style="italic" font-size="12">«record»</text>
        <text x="630" y="468" text-anchor="middle" font-weight="700">data&lt;Atom&gt;</text>
-       <text x="470" y="500">+ index : index&lt;Atom&gt;</text>
+       <text x="470" y="500">+ index : key&lt;Atom&gt;</text>
        <text x="470" y="520">+ predicate : index&lt;Predicate&gt;</text>
        <text x="470" y="540">+ terms : flat_vector&lt;index&lt;Term&gt;&gt;</text>
        <text x="470" y="570">+ fields()</text>
@@ -133,7 +133,7 @@ The goal differs, and with it the design:
        <text x="30" y="324">+ member&lt;&amp;F&gt;()</text>
        <text x="190" y="450" text-anchor="middle" font-style="italic" font-size="12">«builder»</text>
        <text x="190" y="468" text-anchor="middle" font-weight="700">builder&lt;Atom, C&gt;</text>
-       <text x="30" y="500">+ index : index&lt;Atom&gt;</text>
+       <text x="30" y="500">+ index : key&lt;Atom&gt;</text>
        <text x="30" y="520" font-size="12">+ predicate : built_t&lt;index&lt;Predicate&gt;, C&gt;</text>
        <text x="30" y="540" font-size="12">+ terms : built_t&lt;flat_vector&lt;index&lt;Term&gt;&gt;, C&gt;</text>
        <text x="30" y="570">+ fields()</text>
@@ -161,15 +161,24 @@ The goal differs, and with it the design:
    mixin.</figcaption>
    </figure>
 
-A repository reads a record by its index (``operator[]``, unchecked, and ``at``, checked), and inserts and finds a record
-from its builder or its ``urd::data<T>``.
+A repository reads a record by its index (``operator[]``, unchecked, and ``at``, checked), and inserts and finds a
+record from its builder or its ``urd::data<T>``.
 
 .. note::
 
    **Keys of several parts.** A record numbered within another (a row within its relation) is identified by a key of
    several parts, ``urd::key<Ts...>``, resolved in order, each part selecting the container the next is looked up in:
-   ``urd::key<F, Row<F>>`` is a row's relation, then the row there. ``urd::index<T>`` is the key of one part, so every
-   lookup, insertion and count takes a key, whatever its number of parts.
+   ``urd::key<F, Row<F>>`` is a row's relation, then the row there. A specialization ``urd::key_of<T>`` beside the tag
+   names it (``urd::key_t<T>``; ``urd::key<T>`` by default). ``urd::index<T>`` is the key of one part, so every lookup,
+   insertion and count takes a key, whatever its number of parts. The record holds its own part as ``index`` and the
+   parts before it as fields (a row's ``relation``); its ``key()`` joins them (S1).
+
+.. note::
+
+   **A key that is a handle.** A record whose Store names it by a handle rather than a number (a state's storage, by
+   its pool's tree handle) says so by a specialization ``urd::key_value_of<T>`` beside the tag: ``type``, the handle,
+   and ``none``, the handle that names nothing. Its key is ``urd::key<T>`` as any other's; ``urd::index<T>`` names a
+   number and does not exist for it.
 
 .. note::
 
@@ -177,8 +186,11 @@ from its builder or its ``urd::data<T>``.
    stored ``urd::data<T>``. A record kept in a representation of its own specializes the two together:
    ``urd::stored_ref_of<T>`` names what a lookup hands out, and ``urd::data<T>`` stays the owning form it is inserted
    and found from. A row is stored packed at its columns' widths: ``stored_ref_of<Row<F>>`` is ``PackedRow<F>``, a
-   reader of its bits, and ``data<Row<F>>`` holds its relation and its values. The views read both through the same
-   mixin (S3). This is the one customization point of how a record is stored.
+   reader of its bits, and ``data<Row<F>>`` holds its relation and its values. How each field is read from the stored
+   form is a specialization ``urd::stored_field<Member, Stored>`` beside it (a row's values: its bits; its relation: its
+   slot's). A state's storage is stored in its pool's tree, its lookup a reader of the pool and its key, its values
+   unpacked on reading. The views read every form through the same mixin (S3). This is the one customization point of
+   how a record is stored.
 
 - .. rule:: schema-record-data
   .. rule:: S1
@@ -195,8 +207,9 @@ from its builder or its ``urd::data<T>``.
 
   Each specialization has, in this order:
 
-  #. ``urd::index<T> index;``, where the record has an index: the index its Store gives it, empty until then. A value
-     held in other records has none (Values);
+  #. ``urd::key<T> index;``, where the record has an index: its own part of its key (a number, or a handle its Store
+     hands out), which its Store writes at insertion, empty until then. A value held in other records has none
+     (Values);
   #. the fields, data members of any type that urd can store as bytes;
   #. ``data() = default;`` and the constructor from the fields in order, which leaves ``index`` empty;
   #. either the copy deleted and the move and the destructor defaulted, as in the example, so that a copy that would
@@ -215,7 +228,10 @@ from its builder or its ``urd::data<T>``.
      &data::<member>>...>``;
   #. ``identifying_members()``, the members that make the record what it is: ``urd::members_of(fields())`` for all
      fields, or some of them where the record stores more than identifies it;
-  #. ``cista_members()``: ``urd::Members<&data::index, &data::<member>...>``, the index and the fields in their order.
+  #. ``cista_members()``: ``urd::Members<&data::index, &data::<member>...>``, the index and the fields in their order;
+  #. ``key()``, where it has an index: its whole key, ``urd::key_t<T>``, the one way urd reads it: the fields that
+     select the container it lies in, if any, then its index (an atom's ``urd::key<Atom>(index)``, a row's
+     ``urd::key<F, Row<F>>(relation, index)``).
 
   A record declares nothing else: no other function, alias, variable or ``static_assert``. A value derived from the
   fields is a function of the view (S3), not a member. The lifted atoms' record:
@@ -228,7 +244,7 @@ from its builder or its ``urd::data<T>``.
      template<lib::formalism::FactKind F>
      struct data<lib::formalism::Atom<lib::LiftedTag, F>>
      {
-         urd::index<lib::formalism::Atom<lib::LiftedTag, F>> index;
+         urd::key<lib::formalism::Atom<lib::LiftedTag, F>> index;
          urd::index<lib::formalism::Predicate<F>> predicate;
          urd::flat_vector<urd::index<lib::formalism::Term>> terms;
 
@@ -247,6 +263,11 @@ from its builder or its ``urd::data<T>``.
          }
          static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
          static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::predicate, &data::terms> {}; }
+
+         urd::key<lib::formalism::Atom<lib::LiftedTag, F>> key() const noexcept
+         {
+             return urd::key<lib::formalism::Atom<lib::LiftedTag, F>>(index);
+         }
      };
      }
 
@@ -264,7 +285,7 @@ from its builder or its ``urd::data<T>``.
   header of its record and the type ``C`` of the context it is read through (a type only: no member holds a context).
   Each specialization has, in this order:
 
-  #. ``urd::index<T> index;``, where its record has one;
+  #. ``urd::key<T> index;``, where its record has one;
   #. for each field of ``data<T>``, in its order and under its name, ``urd::built_t<M, Context> <field>;``, where ``M``
      is the field's type in the record and ``Context`` the repository that holds ``M``'s records (``C`` for the
      record's own). ``built_t`` gives the built form: an index becomes a child (its index, or a handle that owns a
@@ -289,7 +310,7 @@ from its builder or its ``urd::data<T>``.
      template<lib::formalism::FactKind F, typename C>
      struct builder<lib::formalism::Atom<lib::LiftedTag, F>, C>
      {
-         urd::index<lib::formalism::Atom<lib::LiftedTag, F>> index;
+         urd::key<lib::formalism::Atom<lib::LiftedTag, F>> index;
          urd::built_t<urd::index<lib::formalism::Predicate<F>>, C> predicate;
          urd::built_t<urd::flat_vector<urd::index<lib::formalism::Term>>, C> terms;
 
@@ -314,6 +335,15 @@ from its builder or its ``urd::data<T>``.
      is allocated once its buffers have grown. A form whose order needs the context takes a stateful
      ``urd::order_by``, given to its Store as ``std::set`` takes its comparison: a relation's rows, kept sorted and
      unique by their values, which only the repository can read.
+
+  .. note::
+
+     **Values that are children by their position.** A list field whose elements are children or plain values by
+     their position (a row's values: an object where its relation's column is one, a number otherwise) says which by
+     a specialization ``urd::element_children<&data<T>::<field>>`` beside the record: ``is_child(record, context,
+     position)``, and ``child`` and ``element``, which convert one to the other. urd builds, copies and interns such a
+     field element by element, a child as any other child: a row copied into another repository has its objects copied
+     with it.
 
 - .. rule:: schema-record-view
   .. rule:: S3

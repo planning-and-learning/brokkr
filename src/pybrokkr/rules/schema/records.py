@@ -156,11 +156,23 @@ def argument_of(text: str, position: int) -> str:
     return arguments[position] if position < len(arguments) else ""
 
 
+def key_parts(spelling: str) -> int:
+    """The number of parts of the urd::key the type `spelling` is: its arguments, counted outside their own brackets."""
+    if "key<" not in spelling:
+        return 0
+    inner = spelling[spelling.index("key<") + len("key<") : spelling.rindex(">")]
+    depth, parts = 0, 1
+    for char in inner:
+        depth += {"<": 1, ">": -1}.get(char, 0)
+        parts += depth == 0 and char == ","
+    return parts
+
+
 def written_type(member: ci.Cursor) -> str:
     """The type of the data member `member` as written (normalized): its tokens before its name."""
     tokens = words(member)
     # Its name is the token after the type: the last one of its spelling before an initializer (a type may name it too,
-    # as urd::index<T> index does)
+    # as urd::key<T> index does)
     ends = [
         position
         for position, word in enumerate(tokens)
@@ -413,10 +425,10 @@ def record_findings(cursor: ci.Cursor) -> tuple[Record, list[str]]:
     others = [each for each in members if each not in known and each.kind != ci.CursorKind.CXX_BASE_SPECIFIER]
     say.extend(f"declares {each.kind.name.lower()} {each.spelling}" for each in others)
     # Whether a record has an index is its semantics (an interned one does: interning writes it); where it has one, the
-    # index is its first member, of type urd::index<T>.
+    # index is its first member: urd::key<T>, its own part of its key (a number, a handle), which its store writes.
     indexed = any(each.spelling == "index" for each in fields)
-    if indexed and (fields[0].spelling != "index" or "index<" not in fields[0].type.spelling):
-        say.append("has an index that is not its first member, urd::index<T> index")
+    if indexed and (fields[0].spelling != "index" or not written_type(fields[0]).startswith("urd::key<")):
+        say.append("has an index that is not its first member, urd::key<T> index")
     names = [each.spelling for each in fields if each.spelling != "index"]
     say.extend(block_findings([each for each in members if each in known]))
     shapes = sorted(len(list(each.get_arguments())) for each in constructors)
@@ -427,6 +439,18 @@ def record_findings(cursor: ci.Cursor) -> tuple[Record, list[str]]:
     copyable = [each for each in methods if each.spelling == "copyable"]
     methods = [each for each in methods if each.spelling != "copyable"]
     say.extend(copy_findings(special, copyable))
+    # A record with an index returns its whole key, last: key(), urd's one way to read it (its index, after the parts
+    # that select its store: a row's relation). One without an index has no key.
+    keyed = bool(methods) and methods[-1].spelling == "key"
+    if keyed:
+        returned = methods[-1].result_type.spelling
+        if not indexed:
+            say.append("declares key() without an index")
+        elif not re.search(r"\bkey<", returned):
+            say.append(f"declares key() returning {returned}, not its urd::key<...>")
+        methods = methods[:-1]
+    elif indexed:
+        say.append("has an index but no key(), its last member, returning its urd::key<...>")
     if [each.spelling for each in methods] != METHODS:
         say.append(f"has the functions {[each.spelling for each in methods]}, not {METHODS}")
     say.extend(list_findings(methods, names, indexed=indexed))
@@ -1092,7 +1116,7 @@ BINDERS = ("bind_index", "bind_data", "bind_view", "bind_builder")
 BINDS = (*BINDERS, "class_<")
 # A record or mixin, a value's fields(), a function list
 DEFINED = (
-    r"(?:struct|class)\s+(?:::)?(?:urd::)?(?:data|view_mixin|resolution)\s*<",
+    r"(?:struct|class)\s+(?:::)?(?:urd::)?(?:data|view_mixin|resolution|key_of)\s*<",
     r"static\s+constexpr\s+[^;{=()]*\bfields\s*\(",
     r"\burd::function\s*<",
 )
@@ -1580,6 +1604,9 @@ class Defined:
     builder_found: list[Finding] = field(default_factory=list[Finding])
     # The types a urd::resolution specialization reads (as what they name: keys), by their names with namespaces
     keys: list[str] = field(default_factory=list[str])
+    # The tags a urd::key_of specialization keys by several parts (a row: its relation, then its number), by their
+    # names with namespaces, and where
+    several: list[tuple[str, str, int]] = field(default_factory=list[tuple[str, str, int]])
 
 
 BUILT = "urd::built_t<"
@@ -1603,8 +1630,8 @@ def builder_field_findings(fields: list[ci.Cursor]) -> tuple[list[str], list[str
     """
     say: list[str] = []
     indexed = any(each.spelling == "index" for each in fields)
-    if indexed and (fields[0].spelling != "index" or not written_type(fields[0]).startswith("urd::index<")):
-        say.append("has an index that is not its first member, urd::index<T> index")
+    if indexed and (fields[0].spelling != "index" or not written_type(fields[0]).startswith("urd::key<")):
+        say.append("has an index that is not its first member, urd::key<T> index")
     names: list[str] = []
     built: list[str] = []
     for each in fields:
@@ -1761,6 +1788,8 @@ def file_findings(repository: Path, file: str, data: Database) -> Defined:
             defined.keys.append(
                 base_name(qualified_of(normalized(cursor.displayname or cursor.type.spelling), "resolution"))
             )
+        elif in_urd(cursor, "key_of"):
+            defined.several.extend(keys_of_several_parts(cursor, file))
         elif in_urd(cursor, "builder"):
             built, say = builder_findings(cursor, file)
             defined.builders.append(built)
@@ -1770,6 +1799,18 @@ def file_findings(repository: Path, file: str, data: Database) -> Defined:
         else:
             values_in(cursor, file, defined)
     return defined
+
+
+def keys_of_several_parts(cursor: ci.Cursor, file: str) -> list[tuple[str, str, int]]:
+    """The tag the urd::key_of specialization `cursor` keys by several parts, with where: none for a key of one part."""
+    tag = base_name(qualified_of(normalized(cursor.displayname or cursor.type.spelling), "key_of"))
+    return [
+        (tag, file, cursor.location.line)
+        for alias in cursor.get_children()
+        if alias.kind == ci.CursorKind.TYPE_ALIAS_DECL
+        and alias.spelling == "type"
+        and key_parts(alias.underlying_typedef_type.spelling) > 1
+    ]
 
 
 def values_in(cursor: ci.Cursor, file: str, defined: Defined) -> None:
@@ -2046,7 +2087,9 @@ def check(repository: Path, compile_commands: Path, jobs: int | None = None) -> 
     keys: set[str] = set()
     values: dict[str, tuple[str, int]] = {}
     free: dict[tuple[str, str, int, int], list[str]] = {}
+    several: list[tuple[str, str, int]] = []
     for each in defined:
+        several.extend(each.several)
         records.extend(each.records)
         mixins.extend(each.mixins)
         found["S1"].extend(each.record_found)
@@ -2055,6 +2098,7 @@ def check(repository: Path, compile_commands: Path, jobs: int | None = None) -> 
         free.update(each.free)
         builders.extend(each.builders)
         found["S2"].extend(each.builder_found)
+    found["S1"].extend(unindexed_findings(several, records))
     # A record's mixins: those of its tag (with its namespaces) and its template header (one specialization of a tag per
     # shape of its parameters, e.g. data<Concept<F, Tag>> for each concept Tag satisfies, has the mixin of the same
     # header). A held form's mixin that inherits the tag's has its base's getters and is checked for the rest.
@@ -2080,6 +2124,19 @@ def check(repository: Path, compile_commands: Path, jobs: int | None = None) -> 
     if bindings:
         found["S4"].extend(builder_binding_findings(builders, records, tags["bind_builder"]))
     return found
+
+
+def unindexed_findings(several: list[tuple[str, str, int]], records: list[Record]) -> list[Finding]:
+    """The records keyed by several parts (urd::key_of: `several`) that hold no index, the last part, nor key() (S1)."""
+    return [
+        Finding(
+            f"{record.file}:{record.line}",
+            f"data<{record.tag}> is keyed by several parts ({file}:{line}) but holds no index and no key()",
+        )
+        for tag, file, line in several
+        for record in records
+        if base_name(record.qualified or record.tag) == tag and not record.indexed
+    ]
 
 
 def builder_binding_findings(builders: list[Builder], records: list[Record], tags: set[Tag]) -> list[Finding]:

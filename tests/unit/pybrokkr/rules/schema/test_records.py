@@ -21,7 +21,9 @@ URD = """#pragma once
 #include <cstdint>
 namespace urd {
 template<typename T> struct data;
-template<typename T> struct index { std::uint32_t value; };
+template<typename... Ts> struct key { std::uint32_t value; };
+template<typename T> using index = key<T>;
+template<typename T> struct key_of { using type = key<T>; };
 template<typename T> struct flat_vector { T* begin; };
 template<auto... Ms> struct Members {};
 template<std::size_t N> struct fixed_string {
@@ -49,7 +51,7 @@ ATOM_DATA = """#pragma once
 #include <urd/elements/flat.hpp>
 namespace urd {
 template<> struct data<lib::Atom> {
-    urd::index<lib::Atom> index;
+    urd::key<lib::Atom> index;
     urd::index<lib::Predicate> predicate;
     urd::flat_vector<std::uint32_t> objects;
     data() = default;
@@ -67,6 +69,7 @@ template<> struct data<lib::Atom> {
     static constexpr auto cista_members() noexcept {
         return urd::Members<&data::index, &data::predicate, &data::objects> {};
     }
+    urd::key<lib::Atom> key() const noexcept { return urd::key<lib::Atom>(index); }
 };
 }
 """
@@ -93,11 +96,12 @@ LOOSE_DATA = """#pragma once
 #include <string>
 namespace urd {
 template<> struct data<lib::Loose> {
-    urd::index<lib::Loose> index;
+    urd::key<lib::Loose> index;
     std::string name;
     data() = default;
     data(const data&) = delete;
     static constexpr auto cista_members() noexcept { return urd::Members<&data::name> {}; }
+    urd::key<lib::Loose> key() const noexcept { return urd::key<lib::Loose>(index); }
 };
 }
 namespace lib { inline int helper() { return 0; } }
@@ -135,7 +139,7 @@ ALIAS_DATA = """#pragma once
 #include <urd/elements/flat.hpp>
 namespace urd {
 template<> struct data<lib::Object> {
-    urd::index<lib::Object> index;
+    urd::key<lib::Object> index;
     int count = 0;
     data() = default;
     explicit data(int count_) : index(), count(count_) {}
@@ -147,6 +151,7 @@ template<> struct data<lib::Object> {
     static constexpr auto fields() noexcept { return urd::Fields<urd::field<"count", &data::count>> {}; }
     static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
     static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::count> {}; }
+    urd::key<lib::Object> key() const noexcept { return urd::key<lib::Object>(index); }
 };
 }
 """
@@ -157,7 +162,7 @@ COST_DATA = """#pragma once
 #include <urd/elements/flat.hpp>
 namespace urd {
 template<> struct data<lib::Cost> {
-    urd::index<lib::Cost> index;
+    urd::key<lib::Cost> index;
     lib::Weight weight;
     data() = default;
     explicit data(lib::Weight weight_) : index(), weight(weight_) {}
@@ -169,6 +174,7 @@ template<> struct data<lib::Cost> {
     static constexpr auto fields() noexcept { return urd::Fields<urd::field<"weight", &data::weight>> {}; }
     static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
     static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::weight> {}; }
+    urd::key<lib::Cost> key() const noexcept { return urd::key<lib::Cost>(index); }
 };
 }
 """
@@ -178,7 +184,7 @@ TERM_DATA = """#pragma once
 #include <urd/elements/flat.hpp>
 namespace urd {
 template<> struct data<lib::Term> {
-    urd::index<lib::Term> index;
+    urd::key<lib::Term> index;
     urd::flat_vector<std::uint32_t> objects;
     data() = default;
     explicit data(urd::flat_vector<std::uint32_t> objects_) : index(), objects(objects_) {}
@@ -190,6 +196,7 @@ template<> struct data<lib::Term> {
     static constexpr auto fields() noexcept { return urd::Fields<urd::field<"objects", &data::objects>> {}; }
     static constexpr auto identifying_members() noexcept { return urd::Members<&data::objects> {}; }
     static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::objects> {}; }
+    urd::key<lib::Term> key() const noexcept { return urd::key<lib::Term>(index); }
 };
 }
 """
@@ -210,8 +217,9 @@ LOCAL_TEST = """#include "lib/declarations.hpp"
 #include <urd/elements/flat.hpp>
 namespace urd {
 template<> struct data<lib::Local> {
-    urd::index<lib::Local> index;
+    urd::key<lib::Local> index;
     int count = 0;
+    urd::key<lib::Local> key() const noexcept { return urd::key<lib::Local>(index); }
 };
 template<typename V> struct view_mixin<urd::data<lib::Local>, V> {
     auto get_count() const noexcept { return static_cast<const V&>(*this).record().count; }
@@ -352,7 +360,7 @@ namespace lib { struct Probe {}; template<typename V> struct Reads {}; }
 namespace lib { template<typename T> struct Wrap {}; template<typename T> T make(); }
 namespace urd {
 template<> struct data<lib::Probe> {
-    urd::index<lib::Probe> index;
+    urd::key<lib::Probe> index;
     int count = 0;
     data() = default;
     explicit data(int count_) : index(), count(count_) {}
@@ -364,6 +372,7 @@ template<> struct data<lib::Probe> {
     static constexpr auto fields() noexcept { return urd::Fields<urd::field<"count", &data::count>> {}; }
     static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
     static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::count> {}; }
+    urd::key<lib::Probe> key() const noexcept { return urd::key<lib::Probe>(index); }
 };
 }
 namespace lib {
@@ -427,7 +436,7 @@ namespace lib { struct Classy {}; struct Shuffled {}; }
 namespace urd {
 template<> class data<lib::Classy> {
 public:
-    urd::index<lib::Classy> index;
+    urd::key<lib::Classy> index;
     int count = 0;
     data() = default;
     explicit data(int count_) : index(), count(count_) {}
@@ -443,7 +452,7 @@ public:
 };
 template<> struct data<lib::Shuffled> {
     static constexpr auto fields() noexcept { return urd::Fields<urd::field<"count", &data::count>> {}; }
-    urd::index<lib::Shuffled> index;
+    urd::key<lib::Shuffled> index;
     int count = 0;
     data() = default;
     explicit data(int count_) : index(), count(count_) {}
@@ -454,6 +463,7 @@ template<> struct data<lib::Shuffled> {
     ~data() = default;
     static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
     static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::count> {}; }
+    urd::key<lib::Shuffled> key() const noexcept { return urd::key<lib::Shuffled>(index); }
 };
 }
 """
@@ -537,6 +547,38 @@ def test_a_record_may_be_identified_by_its_index(tmp_path: Path) -> None:
     assert not [each for each in check(root, database)["S1"] if "term_data" in each.path]
 
 
+def test_a_record_with_an_index_declares_its_key(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    key = "    urd::key<lib::Term> key() const noexcept { return urd::key<lib::Term>(index); }\n"
+    unkeyed = TERM_DATA.replace(key, "")
+    assert unkeyed != TERM_DATA
+    (root / "include/lib/term_data.hpp").write_text(unkeyed)
+    found = [each.rule for each in check(root, database)["S1"] if "term_data" in each.path]
+    assert found == ["data<Term> has an index but no key(), its last member, returning its urd::key<...>"]
+
+
+def test_a_record_writes_its_index_as_its_key_part(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    as_index = TERM_DATA.replace("    urd::key<lib::Term> index;", "    urd::index<lib::Term> index;")
+    assert as_index != TERM_DATA
+    (root / "include/lib/term_data.hpp").write_text(as_index)
+    found = [each.rule for each in check(root, database)["S1"] if "term_data" in each.path]
+    assert found == ["data<Term> has an index that is not its first member, urd::key<T> index"]
+
+
+def test_a_record_keyed_by_several_parts_holds_its_index(tmp_path: Path) -> None:
+    root, database = library(tmp_path)
+    several = (
+        "namespace lib { struct Group {}; }\n"
+        "namespace urd { template<> struct key_of<lib::Span> { using type = urd::key<lib::Group, lib::Span>; }; }\n"
+    )
+    (root / "include/lib/span_data.hpp").write_text(PLAIN_DATA + several)
+    found = [each.rule for each in check(root, database)["S1"] if "span_data" in each.path]
+    assert len(found) == 1
+    assert found[0].startswith("data<Span> is keyed by several parts (include/lib/span_data.hpp:")
+    assert found[0].endswith("but holds no index and no key()")
+
+
 def test_a_record_without_fields_has_only_its_default_constructor(tmp_path: Path) -> None:
     root, database = library(tmp_path)
     empty = (
@@ -567,7 +609,7 @@ template<typename Tag> struct Shape {};
 }
 namespace urd {
 template<lib::Unary Tag> struct data<lib::Shape<Tag>> {
-    urd::index<lib::Shape<Tag>> index;
+    urd::key<lib::Shape<Tag>> index;
     std::uint32_t operand;
     data() = default;
     explicit data(std::uint32_t operand_) : index(), operand(operand_) {}
@@ -579,9 +621,10 @@ template<lib::Unary Tag> struct data<lib::Shape<Tag>> {
     static constexpr auto fields() noexcept { return urd::Fields<urd::field<"operand", &data::operand>> {}; }
     static constexpr auto identifying_members() noexcept { return urd::Members<&data::operand> {}; }
     static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::operand> {}; }
+    urd::key<lib::Shape<Tag>> key() const noexcept { return urd::key<lib::Shape<Tag>>(index); }
 };
 template<lib::Binary Tag> struct data<lib::Shape<Tag>> {
-    urd::index<lib::Shape<Tag>> index;
+    urd::key<lib::Shape<Tag>> index;
     std::uint32_t left_operand;
     std::uint32_t right_operand;
     data() = default;
@@ -599,6 +642,7 @@ template<lib::Binary Tag> struct data<lib::Shape<Tag>> {
     { return urd::Members<&data::left_operand, &data::right_operand> {}; }
     static constexpr auto cista_members() noexcept
     { return urd::Members<&data::index, &data::left_operand, &data::right_operand> {}; }
+    urd::key<lib::Shape<Tag>> key() const noexcept { return urd::key<lib::Shape<Tag>>(index); }
 };
 template<lib::Unary Tag, typename V> struct view_mixin<lib::Shape<Tag>, V> {
 private:
@@ -638,7 +682,7 @@ namespace lib::second { struct Thing {}; }
 namespace urd {
 """
     + """template<> struct data<lib::{ns}::Thing> {{
-    urd::index<lib::{ns}::Thing> index;
+    urd::key<lib::{ns}::Thing> index;
     std::uint32_t {field};
     data() = default;
     explicit data(std::uint32_t {field}_) : index(), {field}({field}_) {{}}
@@ -650,6 +694,7 @@ namespace urd {
     static constexpr auto fields() noexcept {{ return urd::Fields<urd::field<"{field}", &data::{field}>> {{}}; }}
     static constexpr auto identifying_members() noexcept {{ return urd::Members<&data::{field}> {{}}; }}
     static constexpr auto cista_members() noexcept {{ return urd::Members<&data::index, &data::{field}> {{}}; }}
+    urd::key<lib::{ns}::Thing> key() const noexcept {{ return urd::key<lib::{ns}::Thing>(index); }}
 }};
 template<typename V> struct view_mixin<lib::{ns}::Thing, V> {{
 private:
@@ -659,7 +704,7 @@ public:
 }};
 """.format(ns="first", field="weight")
     + """template<> struct data<lib::{ns}::Thing> {{
-    urd::index<lib::{ns}::Thing> index;
+    urd::key<lib::{ns}::Thing> index;
     std::uint32_t {field};
     data() = default;
     explicit data(std::uint32_t {field}_) : index(), {field}({field}_) {{}}
@@ -671,6 +716,7 @@ public:
     static constexpr auto fields() noexcept {{ return urd::Fields<urd::field<"{field}", &data::{field}>> {{}}; }}
     static constexpr auto identifying_members() noexcept {{ return urd::Members<&data::{field}> {{}}; }}
     static constexpr auto cista_members() noexcept {{ return urd::Members<&data::index, &data::{field}> {{}}; }}
+    urd::key<lib::{ns}::Thing> key() const noexcept {{ return urd::key<lib::{ns}::Thing>(index); }}
 }};
 template<typename V> struct view_mixin<lib::{ns}::Thing, V> {{
 private:
@@ -934,7 +980,7 @@ def test_a_builder_that_follows_s2_has_no_findings(tmp_path: Path) -> None:
     root, database = library(tmp_path)
     with_builder(
         root,
-        """    urd::index<lib::Atom> index;
+        """    urd::key<lib::Atom> index;
     urd::built_t<urd::index<lib::Predicate>, C> predicate;
     urd::built_t<urd::flat_vector<std::uint32_t>, C> objects;
     void clear() {}
@@ -959,7 +1005,7 @@ def test_a_builder_that_breaks_s2(tmp_path: Path) -> None:
     with_builder(
         root,
         """    using Objects = urd::flat_vector<std::uint32_t>;
-    urd::index<lib::Atom> index;
+    urd::key<lib::Atom> index;
     urd::built_t<urd::index<lib::Term>, C> predicate;
     urd::flat_vector<std::uint32_t> objects;
     bool empty() const { return true; }
@@ -985,7 +1031,7 @@ def test_a_builder_not_bound_with_bind_builder_is_reported(tmp_path: Path) -> No
     root, database = library(tmp_path)
     with_builder(
         root,
-        """    urd::index<lib::Atom> index;
+        """    urd::key<lib::Atom> index;
     urd::built_t<urd::index<lib::Predicate>, C> predicate;
     urd::built_t<urd::flat_vector<std::uint32_t>, C> objects;
     static constexpr auto fields() noexcept
