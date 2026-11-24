@@ -22,6 +22,7 @@ brokkr is what the planning-and-learning libraries (urd, yggdrasil, loki, tyr, r
    include_rules
    template_rules
    schema_rules
+   determinism_rules
    coding_rules
 
 .. toctree::

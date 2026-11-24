@@ -12,6 +12,7 @@ Rules:
 - [Layout](https://planning-and-learning.github.io/brokkr/directory_layout.html)
 - [Include](https://planning-and-learning.github.io/brokkr/include_rules.html)
 - [Template](https://planning-and-learning.github.io/brokkr/template_rules.html)
+- [Determinism](https://planning-and-learning.github.io/brokkr/determinism_rules.html)
 - [Coding](https://planning-and-learning.github.io/brokkr/coding_rules.html)
 
 Workflows:

@@ -6,9 +6,10 @@ bold; the text after the statement gives the reason and the details, and the rul
 exists, its check.
 
 - **ID.** A letter for the page and a number: ``L`` for :doc:`directory_layout`, ``I`` for :doc:`include_rules`, ``T``
-  for :doc:`template_rules`, ``S`` for :doc:`schema_rules`. A rule that is part of another has that rule's ID and a
-  number of its own (``L1.2``, a part of ``L1``); selecting a rule selects its parts. An ID is given once, in the order
-  the rule is added, and never changes or goes to another rule, also when the rules are reordered or one is removed.
+  for :doc:`template_rules`, ``S`` for :doc:`schema_rules`, ``D`` for :doc:`determinism_rules`. A rule that is part of
+  another has that rule's ID and a number of its own (``L1.2``, a part of ``L1``); selecting a rule selects its parts.
+  An ID is given once, in the order the rule is added, and never changes or goes to another rule, also when the rules
+  are reordered or one is removed.
   Code, commits and findings cite a rule by its ID and its name (``T3 (template-opt-in-extern-lists)``); a link to a
   rule is written ``:rule:`T3```.
 - **Name.** What the rule is about, in a few words (``template-opt-in-extern-lists``), so that a citation reads without
