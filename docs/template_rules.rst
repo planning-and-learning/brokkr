@@ -326,6 +326,40 @@ Instantiation
   peak memory of a full build. The same holds for any template argument that is costly to complete: a qualified call
   (``detail::played_roles(...)``) avoids the lookup where the type cannot change.
 
+- .. rule:: template-named-type-lists
+  .. rule:: T20
+
+  :ruleid:`T20` :decidable:`decidable`
+  **Name a class template specialization over a type list by a class of its own.**
+
+  :Name: ``template-named-type-lists``
+  :Check: ``python -m pybrokkr.rules T20``
+
+  A symbol's name spells its
+  types in full, its template arguments' too: a repository, builder storage or view context written as a
+  specialization over a list of its record types (``BasicRepository<Family, mp_list<...>>``,
+  ``BasicBuilderStorage<C, mp_list<...>>``, ``Repository<Symbols<...>, Relations<...>>``) spells the whole list in
+  every function, view and builder over it, and every debug entry. In runir, these names were 728 MB of one object's
+  symbols (4.4 KB each), and a Debug build's objects reached 3 GB and its link more than 81 GB; named, 31 MB, 0.19 GB
+  and 7.8 GB. Write the list only in a class's base: a class that derives from the list
+  (``struct Builders : ygg::formalism::Builders<...> {};``), or from the specialization over it
+  (``class Repository final : public BasicRepository<Repository, Family, Types>``, the specialization taking the class
+  as its first argument, :rule:`T17`); everything else names that class. A template given such a class forms what it
+  needs from the class, not from a list of its own parameters: yggdrasil's part of a repository is
+  ``HeldPart<Owner, P>``, the P-th of the stores and keys its owner lists (``PartStores``, ``PartKeys``), not
+  ``HeldPart<Owner, SymbolStores<Ts...>, mp_list<urd::index<Ts>...>>``. A type list is a specialization of
+  ``boost::mp11::mp_list``, or of a class template that names itself its ``List`` (``using List = <its name>;``:
+  yggdrasil's ``Symbols``, ``Relations``, ``Builders``); a class deriving from one is not one, and yggdrasil's
+  ``Repository`` and ``BasicBuilderStorage`` take only such classes (``NamesList``), so that the compiler rejects the
+  rest. Two declarations may name the specialization: one written in it (a member, a member's parameter, a nested
+  class; in a template, in the template: the library instantiates them, :rule:`T1`), and an alias in a class that names
+  one of its bases. The check reads the declarations of a repository's own files in every source of its compile
+  database, templates' patterns too: an alias, a variable, a field, a parameter, a function's result and parameters,
+  as their types are spelled in symbols. It reports each such specialization once, at the alias that defines it where
+  there is one; one named only through another library's alias is that library's. A type formed only inside an
+  expression (a template argument deduced in a call) is not read; a source that does not parse is a finding, and one
+  libclang crashes on (clang 18 on runir's DL rule parser) is reported as not checked.
+
 Process
 -------
 

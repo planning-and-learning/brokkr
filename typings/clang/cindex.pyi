@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Dominik Drexler
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Types for the part of libclang's Python bindings pybrokkr.rules reads (coding.fallbacks, template.unity_check,
-# schema.records); the bindings declare none.
+# template.type_lists, schema.records); the bindings declare none.
 
 from collections.abc import Iterator
 
@@ -36,10 +36,12 @@ class CursorKind:
     FUNCTION_TEMPLATE: CursorKind
     IF_STMT: CursorKind
     INCLUSION_DIRECTIVE: CursorKind
+    LINKAGE_SPEC: CursorKind
     MACRO_DEFINITION: CursorKind
     MEMBER_REF_EXPR: CursorKind
     NAMESPACE: CursorKind
     NAMESPACE_REF: CursorKind
+    NO_DECL_FOUND: CursorKind
     RETURN_STMT: CursorKind
     STRUCT_DECL: CursorKind
     TEMPLATE_NON_TYPE_PARAMETER: CursorKind
@@ -51,6 +53,7 @@ class CursorKind:
     TYPE_ALIAS_TEMPLATE_DECL: CursorKind
     TYPE_REF: CursorKind
     TYPEDEF_DECL: CursorKind
+    UNEXPOSED_DECL: CursorKind
     UNEXPOSED_EXPR: CursorKind
     VAR_DECL: CursorKind
     @property
@@ -98,9 +101,26 @@ class Token:
     @property
     def extent(self) -> SourceRange: ...
 
+class TypeKind:
+    ELABORATED: TypeKind
+    FUNCTIONPROTO: TypeKind
+    INVALID: TypeKind
+    LVALUEREFERENCE: TypeKind
+    POINTER: TypeKind
+    RECORD: TypeKind
+    RVALUEREFERENCE: TypeKind
+    TYPEDEF: TypeKind
+    UNEXPOSED: TypeKind
+
 class Type:
     @property
     def spelling(self) -> str: ...
+    @property
+    def kind(self) -> TypeKind: ...
+    def get_pointee(self) -> Type: ...
+    def get_result(self) -> Type: ...
+    def argument_types(self) -> Iterator[Type]: ...
+    def get_named_type(self) -> Type: ...
     def get_canonical(self) -> Type: ...
     def get_num_template_arguments(self) -> int: ...
     def get_template_argument_type(self, num: int) -> Type: ...
@@ -126,6 +146,7 @@ class Cursor:
     @property
     def linkage(self) -> LinkageKind: ...
     def get_children(self) -> Iterator[Cursor]: ...
+    def get_usr(self) -> str: ...
     def walk_preorder(self) -> Iterator[Cursor]: ...
     def get_tokens(self) -> Iterator[Token]: ...
     def is_definition(self) -> bool: ...

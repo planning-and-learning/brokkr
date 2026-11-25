@@ -24,6 +24,7 @@ from pathlib import Path
 from pybrokkr.rules.include import cycles
 from pybrokkr.rules.layout import files, registered
 from pybrokkr.rules.schema import records
+from pybrokkr.rules.template import type_lists
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,13 @@ def _schema_rule(rule: str) -> Callable[[Path, Inputs], list[files.Finding]]:
     return run
 
 
+def _type_lists(repository: Path, inputs: Inputs) -> list[files.Finding]:
+    if inputs.compile_commands is None:
+        message = "T20 needs a compile database"
+        raise ValueError(message)
+    return type_lists.check(repository, inputs.compile_commands.resolve(), inputs.jobs)
+
+
 RULES: dict[str, Rule] = {
     **{rule: Rule(name, "decidable", _layout_rule(rule)) for rule, (name, _) in files.RULES.items()},
     "L1.7": Rule(
@@ -73,6 +81,7 @@ RULES: dict[str, Rule] = {
     "S3": Rule("schema-record-view", "decidable", _schema_rule("S3"), "compile commands"),
     "S4": Rule("schema-record-binding", "decidable", _schema_rule("S4"), "compile commands"),
     "S5": Rule("schema-value", "decidable", _schema_rule("S5"), "compile commands"),
+    "T20": Rule("template-named-type-lists", "decidable", _type_lists, "compile commands"),
 }
 
 

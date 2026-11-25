@@ -23,7 +23,7 @@ def test_a_rule_is_selected_by_id_name_page_class_or_all() -> None:
     assert selected(["all"]) == list(RULES)
 
 
-@pytest.mark.parametrize("name", ["L99", "T", "judgment", "layout-unknown"])
+@pytest.mark.parametrize("name", ["L99", "D", "judgment", "layout-unknown"])
 def test_a_name_that_selects_nothing_is_an_error(name: str) -> None:
     with pytest.raises(ValueError, match=name):
         selected([name])
