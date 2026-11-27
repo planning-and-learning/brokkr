@@ -91,11 +91,11 @@ Headers
 
   :Name: ``include-include-what-you-use``
 
-  A header compiles on its own. Library code, tests and executables include the components
-  they use, never umbrella headers such as ``tyr/planning/planning.hpp``. This includes the formatter headers of every
-  type that is formatted (``tyr/planning/formatter.hpp``, ``yggdrasil/formatting/cista_formatters.hpp``). Measure
-  third-party headers on their own before including them from a widely used header; a small utility can carry a large
-  include tree.
+  A header compiles on its own. Library code, tests and executables include the components they use, never umbrella
+  headers such as ``tyr/planning/planning.hpp``. A type's own formatter is declared beside the type, so its header
+  brings it; a generic formatter's header is included where it is used
+  (``yggdrasil/formatting/cista_formatters.hpp``). Measure third-party headers on their own before including them from
+  a widely used header; a small utility can carry a large include tree.
 
 - .. rule:: include-pimpl
   .. rule:: I7
