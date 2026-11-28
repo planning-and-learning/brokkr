@@ -461,7 +461,10 @@ def record_findings(cursor: ci.Cursor) -> tuple[Record, list[str]]:
     elif indexed:
         say.append("has an index but no key(), its last member, returning its urd::key<...>")
     # identifying_members() is declared only where it is a real subset of the fields (list_findings).
-    if [each.spelling for each in methods] not in (METHODS, [each for each in METHODS if each != "identifying_members"]):
+    if [each.spelling for each in methods] not in (
+        METHODS,
+        [each for each in METHODS if each != "identifying_members"],
+    ):
         say.append(f"has the functions {[each.spelling for each in methods]}, not {METHODS}")
     say.extend(list_findings(methods, names, indexed=indexed))
     parameters = tuple(
@@ -1415,16 +1418,24 @@ def walk_outside_urd_python(cursor: ci.Cursor) -> Iterator[ci.Cursor]:
         yield from walk_outside_urd_python(child)
 
 
+def add_bound(tags: dict[str, set[Tag]], call: ci.Cursor, parameters: tuple[str, ...] = ()) -> None:
+    """Adds to `tags` what `call` binds, where it calls a binder (BINDERS) or a fold over binders (FOLDS)."""
+    if call.kind != ci.CursorKind.CALL_EXPR:
+        return
+    binder = callee(call)
+    if binder in BINDERS:
+        tags[binder] |= binding_tags(call, binder, parameters)
+    elif binder in FOLDS:
+        for each in FOLDS[binder]:
+            tags[each] |= fold_tags(call, binder, parameters)
+
+
 def bound(unit: ci.TranslationUnit, path: Path) -> dict[str, set[Tag]]:
     """What the binding source `path` (parsed: `unit`) binds, by binder (BINDERS): the tags of binding_tags."""
     tags: dict[str, set[Tag]] = {binder: set() for binder in BINDERS}
     nodes = list(binding_nodes(unit, path))
     for call in nodes:
-        if call.kind == ci.CursorKind.CALL_EXPR and (binder := callee(call)) in BINDERS:
-            tags[binder] |= binding_tags(call, binder)
-        elif call.kind == ci.CursorKind.CALL_EXPR and binder in FOLDS:
-            for each in FOLDS[binder]:
-                tags[each] |= fold_tags(call, binder)
+        add_bound(tags, call)
     for binder, more in instantiated_tags(nodes).items():
         tags[binder] |= more
     # A call in a function template, once more with its parameters: its tag may be a pattern over them.
@@ -1437,11 +1448,7 @@ def bound(unit: ci.TranslationUnit, path: Path) -> dict[str, set[Tag]]:
             if each.kind in {ci.CursorKind.TEMPLATE_TYPE_PARAMETER, ci.CursorKind.TEMPLATE_NON_TYPE_PARAMETER}
         )
         for call in function.walk_preorder():
-            if call.kind == ci.CursorKind.CALL_EXPR and (binder := callee(call)) in BINDERS:
-                tags[binder] |= binding_tags(call, binder, parameters)
-            elif call.kind == ci.CursorKind.CALL_EXPR and binder in FOLDS:
-                for each in FOLDS[binder]:
-                    tags[each] |= fold_tags(call, binder, parameters)
+            add_bound(tags, call, parameters)
     return tags
 
 
@@ -1680,10 +1687,8 @@ def builder_field_findings(fields: list[ci.Cursor]) -> tuple[list[str], list[str
             built.append(argument_of(written, 0))
         else:
             built.append("")
-            say.append(
-                f"has the field {each.spelling} of type {written}, not urd::built_t<its record's field, context>"
-                " (or urd::built_only_t)"
-            )
+            expected = "urd::built_t<its record's field, context> (or urd::built_only_t)"
+            say.append(f"has the field {each.spelling} of type {written}, not {expected}")
     return names, built, indexed, say
 
 
@@ -1708,9 +1713,7 @@ def builder_method_findings(methods: list[ci.Cursor], names: list[str], *, index
     lists = [each for each in methods if each.spelling in {"fields", "identifying_members"}]
     if not any(each.spelling == "fields" and declared_static(each) for each in lists):
         say.append("has no static fields()")
-    say.extend(
-        f"declares {each.spelling}() not static" for each in lists if not declared_static(each)
-    )
+    say.extend(f"declares {each.spelling}() not static" for each in lists if not declared_static(each))
     say.extend(list_findings(lists, names, indexed=indexed))
     functions = [each for each in methods if each.spelling == "functions" and declared_static(each)]
     listed = listed_members(functions)

@@ -561,7 +561,9 @@ def test_a_record_identified_by_all_its_fields_names_none(tmp_path: Path, member
 
 def test_a_record_names_its_cista_members_through_urd(tmp_path: Path) -> None:
     root, database = library(tmp_path)
-    by_hand = "    static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::objects> {}; }\n"
+    by_hand = (
+        "    static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::objects> {}; }\n"
+    )
     (root / "include/lib/term_data.hpp").write_text(TERM_DATA.replace(TERM_CISTA, by_hand))
     found = [each.rule for each in check(root, database)["S1"] if "term_data" in each.path]
     assert found == ["data<Term> cista_members() lists its members by hand, not urd::cista_members_of<data>()"]
@@ -860,7 +862,8 @@ def test_a_record_bound_by_bind_record_is_bound(tmp_path: Path) -> None:
         .replace("    urd::python::bind_data<lib::Object>(0);  // a record named by an alias\n", "")
         .replace("    urd::python::bind_view<ObjectView>(0);\n", "    urd::python::bind_record<lib::Object, int>(0);\n")
     )
-    assert "bind_record<lib::Object, int>" in folded and "bind_data<lib::Object>" not in folded
+    assert "bind_record<lib::Object, int>" in folded
+    assert "bind_data<lib::Object>" not in folded
     (root / "python/src/pylib/module.cpp").write_text(folded)
     found = [each.rule for each in check(root, database)["S4"]]
     assert not any(each.startswith("Object ") for each in found), found
@@ -1044,7 +1047,9 @@ def test_a_builder_may_hold_a_field_only_built(tmp_path: Path) -> None:
     urd::built_only_t<urd::index<lib::Predicate>, C> predicate;
     urd::built_t<urd::flat_vector<std::uint32_t>, C> objects;
     static constexpr auto fields() noexcept
-    { return urd::Fields<urd::field<"predicate", &builder::predicate>, urd::field<"objects", &builder::objects>> {}; }""",
+    {
+        return urd::Fields<urd::field<"predicate", &builder::predicate>, urd::field<"objects", &builder::objects>> {};
+    }""",
     )
     assert not [each for each in check(root, database)["S2"] if "atom_builder" in each.path]
 
@@ -1061,7 +1066,9 @@ def test_a_builder_that_breaks_s2(tmp_path: Path) -> None:
     static int helper() { return 0; }
     void reset() {}
     static constexpr auto fields() noexcept
-    { return urd::Fields<urd::field<"predicate", &builder::predicate>, urd::field<"objects", &builder::objects>> {}; }""",
+    {
+        return urd::Fields<urd::field<"predicate", &builder::predicate>, urd::field<"objects", &builder::objects>> {};
+    }""",
     )
     found = {each.rule for each in check(root, database)["S2"] if "atom_builder" in each.path}
     builder = "builder<lib::Atom>"
@@ -1083,7 +1090,9 @@ def test_a_builder_not_bound_with_bind_builder_is_reported(tmp_path: Path) -> No
     urd::built_t<urd::index<lib::Predicate>, C> predicate;
     urd::built_t<urd::flat_vector<std::uint32_t>, C> objects;
     static constexpr auto fields() noexcept
-    { return urd::Fields<urd::field<"predicate", &builder::predicate>, urd::field<"objects", &builder::objects>> {}; }""",
+    {
+        return urd::Fields<urd::field<"predicate", &builder::predicate>, urd::field<"objects", &builder::objects>> {};
+    }""",
     )
     found = [each.rule for each in check(root, database)["S4"] if "atom_builder" in each.path]
     assert any(each.endswith("is not bound with urd::python::bind_builder") for each in found), found
