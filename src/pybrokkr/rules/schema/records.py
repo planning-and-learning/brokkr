@@ -351,16 +351,25 @@ def list_findings(methods: list[ci.Cursor], names: list[str], *, indexed: bool) 
         listed = re.findall(r'field < "(\w+)" ,', " ".join(bodies["fields"]))
         if listed != names or members_named(bodies["fields"]) != names:
             found.append(f"fields() names {listed}, not the fields {names} under their names")
-    if "identifying_members" in bodies and "members_of ( fields ( ) )" not in " ".join(bodies["identifying_members"]):
+    if "identifying_members" in bodies:
         # Which members identify the record is its semantics (its index, where a registered record is its index); that
-        # they are its members is its schema.
+        # they are its members is its schema. All its fields identify a record that declares none: only a real subset
+        # (or its index) is declared.
         named = members_named(bodies["identifying_members"])
         members = ["index", *names] if indexed else names
-        if not named or not set(named) <= set(members):
+        if "members_of ( fields ( ) )" in " ".join(bodies["identifying_members"]) or (names and named == names):
+            found.append(
+                "identifying_members() names all its fields: a record that declares none is identified by them"
+            )
+        elif not named or not set(named) <= set(members):
             found.append(f"identifying_members() names {named}, not some of the members {members}")
     stored = ["index", *names] if indexed else names
-    if "cista_members" in bodies and members_named(bodies["cista_members"]) != stored:
-        found.append(f"cista_members() names {members_named(bodies['cista_members'])}, not {stored}")
+    if "cista_members" in bodies and "cista_members_of <" not in " ".join(bodies["cista_members"]):
+        named = members_named(bodies["cista_members"])
+        if named == stored:
+            found.append("cista_members() lists its members by hand, not urd::cista_members_of<data>()")
+        else:
+            found.append(f"cista_members() names {named}, not {stored}")
     return found
 
 
@@ -451,7 +460,8 @@ def record_findings(cursor: ci.Cursor) -> tuple[Record, list[str]]:
         methods = methods[:-1]
     elif indexed:
         say.append("has an index but no key(), its last member, returning its urd::key<...>")
-    if [each.spelling for each in methods] != METHODS:
+    # identifying_members() is declared only where it is a real subset of the fields (list_findings).
+    if [each.spelling for each in methods] not in (METHODS, [each for each in METHODS if each != "identifying_members"]):
         say.append(f"has the functions {[each.spelling for each in methods]}, not {METHODS}")
     say.extend(list_findings(methods, names, indexed=indexed))
     parameters = tuple(
@@ -537,9 +547,9 @@ def unwrapped(text: str) -> str:
 def returned(body: list[str], receivers: tuple[str, ...]) -> str:
     """The chain of calls a body of tokens `body` returns, written without spaces; "" where it returns none.
 
-    ``this->``, parentheses around it, and one local variable it is held in first (``auto s = get_symbol(); return
-    s.get_name();``) are left out, as is a leading receiver of `receivers` (the view a free function takes); a standard
-    customization point over it is its member (``std::ranges::size(get_values())`` is ``get_values().size()``).
+    ``this->``, parentheses around it, and one local variable it is held in first (``auto s = symbol(); return
+    s.name();``) are left out, as is a leading receiver of `receivers` (the view a free function takes); a standard
+    customization point over it is its member (``std::ranges::size(values())`` is ``values().size()``).
     """
     text = "".join(body).replace("this->", "")
     local = re.fullmatch(r"(?:const)?auto&{0,2}(\w+)=(.+?);return\1\.(.+);", text)
@@ -562,7 +572,7 @@ def forwarding(name: str, words: list[str], receivers: tuple[str, ...] = ()) -> 
     """What S3 does not allow of the function `name` with the tokens `words`: that it only forwards; or empty.
 
     It forwards where its body is a single ``return`` of a chain of calls without arguments
-    (``get_symbol().get_name()``, ``self().context()``) whose last call has its own name, or that is one call on the
+    (``symbol().name()``, ``self().context()``) whose last call has its own name, or that is one call on the
     view itself (an alias of a member it has). `receivers` names the view where a free function takes it.
     """
     if "{" not in words or words[-1] != "}":
@@ -799,7 +809,9 @@ def shape_findings(cursor: ci.Cursor, *, held: bool) -> list[str]:
         private = each.access_specifier != ci.AccessSpecifier.PUBLIC
         if (each.spelling == "self") != private:
             found.append(f"has {each.spelling}() {each.access_specifier.name.lower()}: self() alone is private")
-    if "functions" in names and names[-1] != "functions":
+    # The function list is the static functions(); a getter of a field named functions is a member like any other.
+    lists = [position for position, each in enumerate(members) if is_function_list(each)]
+    if lists and lists[-1] != len(members) - 1:
         found.append(f"declares {names[-1]}() after functions(), which is its last member")
     return found
 
@@ -851,10 +863,12 @@ def mixin_of(cursor: ci.Cursor, file: str) -> Mixin:
     members = tuple(
         (each.spelling, key_of(each))
         for each in functions
-        if each.spelling not in {"self", "functions"} and (each.kind == ci.CursorKind.CXX_METHOD or deduces(each))
+        if each.spelling != "self"
+        and not is_function_list(each)
+        and (each.kind == ci.CursorKind.CXX_METHOD or deduces(each))
     )
-    listed = frozenset(key_of(each) for each in functions if each.spelling == "functions" for each in listed_in(each))
-    own += [what for each in functions if each.spelling == "functions" for what in argument_findings(entries_in(each))]
+    listed = frozenset(key_of(each) for each in functions if is_function_list(each) for each in listed_in(each))
+    own += [what for each in functions if is_function_list(each) for what in argument_findings(entries_in(each))]
     inherits = held and any(
         each.kind == ci.CursorKind.CXX_BASE_SPECIFIER and "view_mixin<" in each.type.spelling for each in children
     )
@@ -960,7 +974,7 @@ def mixin_findings(mixin: Mixin, record: Record) -> list[str]:
     It has ``self()`` first, a getter per field of the record, in field order, each reading its field. That the field
     getters of every record a mixin serves stand before its other members is order_findings'.
     """
-    getters = [f"get_{name}" for name in record.fields]
+    getters = list(record.fields)
     found: list[str] = []
     missing = [each for each in getters if each not in mixin.methods]
     if missing:
@@ -970,11 +984,7 @@ def mixin_findings(mixin: Mixin, record: Record) -> list[str]:
         found.append(
             f"{record.tag}: view_mixin {mixin.qualified} has its field getters {present}, not in field order {getters}"
         )
-    unread = [
-        f"get_{name}"
-        for name in record.fields
-        if f"get_{name}" in mixin.methods and not reads_field(mixin, f"get_{name}", name)
-    ]
+    unread = [name for name in record.fields if name in mixin.methods and not reads_field(mixin, name, name)]
     if unread:
         found.append(
             f"{record.tag}: view_mixin getters {unread} do not read their field through record_of<{mixin.view}>"
@@ -987,7 +997,7 @@ def listing_findings(mixin: Mixin, records: list[Record]) -> list[str]:
 
     That is a member beyond ``self()`` and their field getters that its ``functions()`` does not list.
     """
-    getters = {f"get_{name}" for record in records for name in record.fields}
+    getters = {name for record in records for name in record.fields}
     unlisted = [name for name, key in mixin.members if name not in getters and key not in mixin.listed]
     return [f"{mixin.qualified}: view_mixin members {unlisted} are not listed in functions()"] if unlisted else []
 
@@ -998,7 +1008,7 @@ def order_findings(mixin: Mixin, records: list[Record]) -> list[str]:
     After ``self()`` come the field getters of all of them, before every other member: one strict order, of a mixin of
     one record or a generic one.
     """
-    getters = {f"get_{name}" for record in records for name in record.fields}
+    getters = {name for record in records for name in record.fields}
     members = [each for each in mixin.methods if each != "self"]
     others = [position for position, each in enumerate(members) if each not in getters]
     last_getter = max((position for position, each in enumerate(members) if each in getters), default=-1)
@@ -1112,8 +1122,13 @@ TEMPLATE_PARAMETERS = {
 ALIASES = {ci.CursorKind.TYPE_ALIAS_DECL, ci.CursorKind.TYPEDEF_DECL}
 CONSTRUCTIONS = {ci.CursorKind.VAR_DECL, ci.CursorKind.CALL_EXPR, ci.CursorKind.UNEXPOSED_EXPR}
 BINDERS = ("bind_index", "bind_data", "bind_view", "bind_builder")
+# urd's folds over the binders, each naming a record's tag as its first argument: what each binds of it.
+FOLDS = {
+    "bind_record": ("bind_index", "bind_data", "bind_builder", "bind_view"),
+    "bind_record_views": ("bind_view",),
+}
 # A tracked file that may bind: it names one of these
-BINDS = (*BINDERS, "class_<")
+BINDS = (*BINDERS, *FOLDS, "class_<")
 # A record or mixin, a value's fields(), a function list
 DEFINED = (
     r"(?:struct|class)\s+(?:::)?(?:urd::)?(?:data|view_mixin|resolution|key_of)\s*<",
@@ -1300,6 +1315,16 @@ def written_types(call: ci.Cursor, binder: str) -> list[str]:
     return [each for each in texts if each]
 
 
+def fold_tags(call: ci.Cursor, fold: str, parameters: tuple[str, ...] = ()) -> set[Tag]:
+    """What the call `call` of urd's fold `fold` (FOLDS) binds: the tag its first template argument names."""
+    function = call.referenced
+    if function is not None and function.get_num_template_arguments() > 0:
+        return resolved_tags(call, function, "bind_data")
+    written = written_argument(words(call), fold)
+    tag = argument_of(f"{fold}<{written}>", 0).strip() if written else ""
+    return {(unqualified(tag), "", parameters)} if tag else set()
+
+
 def tag_from(text: str, binder: str) -> str:
     """The tag a binder's template argument `text` binds.
 
@@ -1397,6 +1422,9 @@ def bound(unit: ci.TranslationUnit, path: Path) -> dict[str, set[Tag]]:
     for call in nodes:
         if call.kind == ci.CursorKind.CALL_EXPR and (binder := callee(call)) in BINDERS:
             tags[binder] |= binding_tags(call, binder)
+        elif call.kind == ci.CursorKind.CALL_EXPR and binder in FOLDS:
+            for each in FOLDS[binder]:
+                tags[each] |= fold_tags(call, binder)
     for binder, more in instantiated_tags(nodes).items():
         tags[binder] |= more
     # A call in a function template, once more with its parameters: its tag may be a pattern over them.
@@ -1411,6 +1439,9 @@ def bound(unit: ci.TranslationUnit, path: Path) -> dict[str, set[Tag]]:
         for call in function.walk_preorder():
             if call.kind == ci.CursorKind.CALL_EXPR and (binder := callee(call)) in BINDERS:
                 tags[binder] |= binding_tags(call, binder, parameters)
+            elif call.kind == ci.CursorKind.CALL_EXPR and binder in FOLDS:
+                for each in FOLDS[binder]:
+                    tags[each] |= fold_tags(call, binder, parameters)
     return tags
 
 
@@ -1609,13 +1640,19 @@ class Defined:
     several: list[tuple[str, str, int]] = field(default_factory=list[tuple[str, str, int]])
 
 
-BUILT = "urd::built_t<"
+# A builder's field in the built form of its record's field, or in that form with its children held only built.
+BUILT = ("urd::built_t<", "urd::built_only_t<")
 
 
 def declared_static(method: ci.Cursor) -> bool:
     """Whether the member function `method` is declared static: the word before its name, among its own tokens."""
     tokens = words(method)
     return method.spelling in tokens and "static" in tokens[: tokens.index(method.spelling)]
+
+
+def is_function_list(method: ci.Cursor) -> bool:
+    """Whether `method` is a mixin's function list: its static functions() (a field named functions has a getter)."""
+    return method.spelling == "functions" and declared_static(method)
 
 
 def declared_const(method: ci.Cursor) -> bool:
@@ -1645,6 +1682,7 @@ def builder_field_findings(fields: list[ci.Cursor]) -> tuple[list[str], list[str
             built.append("")
             say.append(
                 f"has the field {each.spelling} of type {written}, not urd::built_t<its record's field, context>"
+                " (or urd::built_only_t)"
             )
     return names, built, indexed, say
 
@@ -1668,10 +1706,10 @@ def builder_method_findings(methods: list[ci.Cursor], names: list[str], *, index
     """
     say: list[str] = []
     lists = [each for each in methods if each.spelling in {"fields", "identifying_members"}]
+    if not any(each.spelling == "fields" and declared_static(each) for each in lists):
+        say.append("has no static fields()")
     say.extend(
-        f"has no static {name}()"
-        for name in ("fields", "identifying_members")
-        if not any(each.spelling == name and declared_static(each) for each in lists)
+        f"declares {each.spelling}() not static" for each in lists if not declared_static(each)
     )
     say.extend(list_findings(lists, names, indexed=indexed))
     functions = [each for each in methods if each.spelling == "functions" and declared_static(each)]

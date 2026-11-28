@@ -105,8 +105,8 @@ The goal differs, and with it the design:
      <g fill="currentColor" stroke="none">
        <text x="630" y="40" text-anchor="middle" font-style="italic" font-size="12">«mixin»</text>
        <text x="630" y="58" text-anchor="middle" font-weight="700">view_mixin&lt;Atom, V&gt;</text>
-       <text x="470" y="120">+ get_predicate()</text>
-       <text x="470" y="140">+ get_terms()</text>
+       <text x="470" y="120">+ predicate()</text>
+       <text x="470" y="140">+ terms()</text>
        <text x="630" y="240" text-anchor="middle" font-style="italic" font-size="12">«pool»</text>
        <text x="630" y="258" text-anchor="middle" font-weight="700">Store</text>
        <text x="470" y="290" font-size="12">pool&lt;data&lt;Atom&gt;, index&lt;Atom&gt;&gt;</text>
@@ -119,8 +119,7 @@ The goal differs, and with it the design:
        <text x="470" y="520">+ predicate : index&lt;Predicate&gt;</text>
        <text x="470" y="540">+ terms : flat_vector&lt;index&lt;Term&gt;&gt;</text>
        <text x="470" y="570">+ fields()</text>
-       <text x="470" y="590">+ identifying_members()</text>
-       <text x="470" y="610">+ cista_members()</text>
+       <text x="470" y="590">+ cista_members()</text>
        <text x="1070" y="242" text-anchor="middle" font-weight="700" style="fill: var(--color-brand-primary);">index_view&lt;Atom, Store&gt;</text>
        <text x="910" y="274">- index : index&lt;Atom&gt;</text>
        <text x="910" y="294">- context : const Store*</text>
@@ -137,7 +136,6 @@ The goal differs, and with it the design:
        <text x="30" y="520" font-size="12">+ predicate : built_t&lt;index&lt;Predicate&gt;, C&gt;</text>
        <text x="30" y="540" font-size="12">+ terms : built_t&lt;flat_vector&lt;index&lt;Term&gt;&gt;, C&gt;</text>
        <text x="30" y="570">+ fields()</text>
-       <text x="30" y="590">+ identifying_members()</text>
        <text x="409" y="277" text-anchor="middle" font-size="12">context</text>
        <text x="851" y="277" text-anchor="middle" font-size="12">context</text>
        <text x="640" y="412" font-size="12">0..*</text>
@@ -225,10 +223,13 @@ record from its builder or its ``urd::data<T>``.
         }
 
   #. ``fields()``, which names each field once, under its member's name: ``urd::Fields<urd::field<"<member>",
-     &data::<member>>...>``;
-  #. ``identifying_members()``, the members that make the record what it is: ``urd::members_of(fields())`` for all
-     fields, or some of them where the record stores more than identifies it;
-  #. ``cista_members()``: ``urd::Members<&data::index, &data::<member>...>``, the index and the fields in their order;
+     &data::<member>>...>``. A field also says what the record promises of it, by the tags a Store promises them: a
+     list the record holds as a set is ``urd::field<"<member>", &data::<member>, urd::sorted, urd::unique>``, and the
+     library canonicalizes it so before it interns the record, with no list of such members elsewhere;
+  #. ``identifying_members()``, only where the record stores more than identifies it: the members that make it what it
+     is (``urd::Members<&data::<member>...>``, or its index where a registered record is its index). A record that
+     declares none is identified by all its fields;
+  #. ``cista_members()``: ``urd::cista_members_of<data>()``, the index and the fields in their order;
   #. ``key()``, where it has an index: its whole key, ``urd::key_t<T>``, the one way urd reads it: the fields that
      select the container it lies in, if any, then its index (an atom's ``urd::key<Atom>(index)``, a row's
      ``urd::key<F, Row<F>>(relation, index)``).
@@ -261,8 +262,7 @@ record from its builder or its ``urd::data<T>``.
          {
              return urd::Fields<urd::field<"predicate", &data::predicate>, urd::field<"terms", &data::terms>> {};
          }
-         static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
-         static constexpr auto cista_members() noexcept { return urd::Members<&data::index, &data::predicate, &data::terms> {}; }
+         static constexpr auto cista_members() noexcept { return urd::cista_members_of<data>(); }
 
          urd::key<lib::formalism::Atom<lib::LiftedTag, F>> key() const noexcept
          {
@@ -290,8 +290,11 @@ record from its builder or its ``urd::data<T>``.
      is the field's type in the record and ``Context`` the repository that holds ``M``'s records (``C`` for the
      record's own). ``built_t`` gives the built form: an index becomes a child (its index, or a handle that owns a
      builder or a record not interned yet), a ``urd::data<T>`` its builder, urd's flat containers std's (a
-     ``flat_vector`` a ``std::vector``), anything else stays as it is;
-  #. ``fields()`` and ``identifying_members()``, as its record's, by member pointers of the builder;
+     ``flat_vector`` a ``std::vector``), anything else stays as it is. A field whose children the builder always
+     builds is ``urd::built_only_t<M, Context> <field>;`` instead: the same form with each child a builder's handle
+     alone (``urd::built_child``), which its readers read as the builder's view, with no form to tell apart;
+  #. ``fields()``, as its record's, by member pointers of the builder, and ``identifying_members()`` where its record
+     declares it;
   #. public member functions that change it, none ``const`` and none ``static``: a builder is read through its view
      (S3), so a public read on it would be a second place for it;
   #. ``functions()``, where it has public member functions, each listed under its Python name
@@ -299,8 +302,10 @@ record from its builder or its ``urd::data<T>``.
      (S4).
 
   A builder declares nothing else: no base, constructor, alias, variable, friend, nor a member that refers to its
-  context. A builder whose child owns a record is move-only; ``urd::clone`` copies it deeply. The lifted atoms'
-  builder:
+  context. A builder whose child owns a record is move-only; ``urd::clone`` copies it deeply. A handle a builder or a
+  record holds is never null: a child held only built is made with its builder (``urd::built_only_t<urd::index<U>, C>
+  <field> = urd::make_owned<urd::builder<U, C>>();``), a list's as they are added, and a builder is not moved out of
+  its handle. The lifted atoms' builder:
 
   .. code-block:: cpp
 
@@ -318,7 +323,6 @@ record from its builder or its ``urd::data<T>``.
          {
              return urd::Fields<urd::field<"predicate", &builder::predicate>, urd::field<"terms", &builder::terms>> {};
          }
-         static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
 
          void clear() noexcept { terms.clear(); }
 
@@ -348,7 +352,7 @@ record from its builder or its ``urd::data<T>``.
 - .. rule:: schema-record-view
   .. rule:: S3
 
-  :ruleid:`S3` :decidable:`decidable` **A record's view has one** ``get_<field>()`` **per field and may derive more from
+  :ruleid:`S3` :decidable:`decidable` **A record's view has one** ``<field>()`` **per field and may derive more from
   them, never reading** ``record()``.
 
   :Name: ``schema-record-view``
@@ -359,7 +363,7 @@ record from its builder or its ``urd::data<T>``.
   in this order:
 
   #. a private ``self()``, the view: ``static_cast<const V&>(*this)``;
-  #. for each field of ``fields()``, in order, ``get_<field>()``, which returns
+  #. for each field of ``fields()``, in order, ``<field>()``, which returns
      ``self().template member<&urd::record_of<V>::<field>>()``: the field resolved through the view's context;
   #. any further member derived from the fields (whether it is ground, a filtered range), built on the getters above;
   #. ``functions()``, which lists every member beyond ``self()`` and the field getters, and the free functions offered
@@ -370,7 +374,7 @@ record from its builder or its ``urd::data<T>``.
   A mixin declares member functions only (no data member, alias, nested type or using-declaration), has no base but its
   tag's mixin (a held form's mixin may inherit it), and never calls ``record()``, which would bypass the resolution
   ``member<>`` does and tie the view to how the record is laid out. A function derives something new: none only
-  forwards a path of getters its callers could read themselves (``get_name()`` as ``get_symbol().get_name()``).
+  forwards a path of getters its callers could read themselves (``name()`` as ``symbol().name()``).
 
   A family of tags has a mixin per record specialization, or one generic mixin over its own parameters that serves
   several (``view_mixin<Atom<T, F>, V>`` serves the lifted and the ground atoms). The lifted atoms' mixin, with a
@@ -388,13 +392,13 @@ record from its builder or its ``urd::data<T>``.
          const V& self() const noexcept { return static_cast<const V&>(*this); }
 
      public:
-         auto get_predicate() const noexcept { return self().template member<&urd::record_of<V>::predicate>(); }
-         auto get_terms() const noexcept { return self().template member<&urd::record_of<V>::terms>(); }
+         auto predicate() const noexcept { return self().template member<&urd::record_of<V>::predicate>(); }
+         auto terms() const noexcept { return self().template member<&urd::record_of<V>::terms>(); }
 
          // Derived: whether none of its terms is a variable.
          bool is_ground() const noexcept
          {
-             return std::ranges::none_of(get_terms(), [](auto term) { return term.is_variable(); });
+             return std::ranges::none_of(terms(), [](auto term) { return term.is_variable(); });
          }
 
          static constexpr auto functions() noexcept { return urd::Functions<urd::function<"is_ground", &view_mixin::is_ground>> {}; }
@@ -439,7 +443,7 @@ record from its builder or its ``urd::data<T>``.
        - ``bind_data``, ``urd::data<T>``: an ``__init__`` from the fields in order, each field read and written under
          its name, comparison by the identifying members, ``str`` and ``repr``
      * - ``<Name>``
-       - ``bind_view``, the view: each ``get_<field>()``, comparison and hashing by its identity, ``str`` and
+       - ``bind_view``, the view: each ``<field>()``, comparison and hashing by its identity, ``str`` and
          ``repr``, ``context()``, ``index()``, and the entries of ``functions()``. A view that borrows, owns or shares
          its record is ``<Name>Borrowed``, ``<Name>Owned``, ``<Name>Shared``; a builder's view has ``Builder`` before
          these (``AtomBuilderBorrowed``)
@@ -458,7 +462,7 @@ record from its builder or its ``urd::data<T>``.
      urd::python::bind_index<lib::formalism::Atom>(m);
      urd::python::bind_data<lib::formalism::Atom>(m);
      urd::python::bind_builder<lib::formalism::Atom, lib::Repository>(m);  // set_predicate, set_terms, clear, view
-     urd::python::bind_view<lib::formalism::AtomView>(m);  // get_predicate, get_terms and functions(): is_ground
+     urd::python::bind_view<lib::formalism::AtomView>(m);  // predicate, terms and functions(): is_ground
 
   .. note::
 
@@ -510,7 +514,8 @@ not being trivially copyable, it deletes its copy (S1), and Python reads its fie
   :Check: ``python -m pybrokkr.rules S5`` (with the compile database of a configured build)
 
   Every type with a static ``fields()`` and ``identifying_members()`` is a record (S1 to S4) or a key of the library's
-  own (one ``urd::resolution`` reads, S3). A type with ``fields()`` alone is printable, not a value. A class with
+  own (one ``urd::resolution`` reads, S3). A type with ``fields()`` alone is printable, not a value; a record, which
+  all its fields identify, need not name them (S1). A class with
   behaviour (private state, member functions) declares no ``fields()`` and is written by a ``fmt::formatter`` of its
   own. A plain value, the bounds of an interval:
 
@@ -541,8 +546,7 @@ not being trivially copyable, it deletes its copy (S1), and Python reads its fie
          }
 
          static constexpr auto fields() noexcept { return urd::Fields<urd::field<"lower", &data::lower>, urd::field<"upper", &data::upper>> {}; }
-         static constexpr auto identifying_members() noexcept { return urd::members_of(fields()); }
-         static constexpr auto cista_members() noexcept { return urd::Members<&data::lower, &data::upper> {}; }
+         static constexpr auto cista_members() noexcept { return urd::cista_members_of<data>(); }
      };
 
      // python/src/pylib/formalism/bounds.cpp
